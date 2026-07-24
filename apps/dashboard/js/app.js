@@ -534,57 +534,177 @@ function openCreateReservationModal() {
 }
 
 // ----------------------------------------------------
-// CONVERSATIONS & ANALYTICS VIEWS
+// CONVERSATIONS VIEW (PHASE 6)
 // ----------------------------------------------------
+let activeThreadPhone = null;
+
 async function renderConversationsView(container) {
-  const conversations = await api('/conversations');
+  const threads = await api('/conversations');
+  state.conversations = threads;
+
+  if (threads.length > 0 && !activeThreadPhone) {
+    activeThreadPhone = threads[0].phone_number;
+  }
+
+  const selectedThread = threads.find((t) => t.phone_number === activeThreadPhone) || threads[0];
+
   container.innerHTML = `
-    <div class="glass-panel" style="padding: 1.25rem;">
-      <div class="table-container">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>From Number</th>
-              <th>State</th>
-              <th>Last Message History</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${conversations.length === 0 ? '<tr><td colspan="3" style="text-align:center; padding:2rem;">No AI conversations active</td></tr>' : ''}
-            ${conversations.map((c) => `
-              <tr>
-                <td><strong>${c.from_number}</strong></td>
-                <td><span class="badge badge-channel">${c.state}</span></td>
-                <td>${JSON.stringify((c.context || {}).messages || []).slice(0, 100)}...</td>
-              </tr>
+    <div class="chat-container">
+      <!-- Left Thread List -->
+      <div class="glass-panel chat-sidebar">
+        <h3 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Active Conversations</h3>
+        <div class="thread-list">
+          ${threads.length === 0 ? '<div style="text-align:center; padding:2rem; color:var(--text-subtle);">No active messages</div>' : ''}
+          ${threads.map((t) => `
+            <div class="thread-item ${t.phone_number === activeThreadPhone ? 'active' : ''}" onclick="selectChatThread('${t.phone_number}')">
+              <div class="avatar" style="width:36px; height:36px; font-size:0.85rem;">${(t.customer_name || 'C')[0]}</div>
+              <div class="thread-info">
+                <div class="name">
+                  <span>${t.customer_name || 'Customer'}</span>
+                  <span style="font-size:0.7rem; color:var(--text-subtle);">${new Date(t.last_updated).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                </div>
+                <div class="preview">${t.last_message || 'No messages'}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- Right Chat Drawer -->
+      <div class="glass-panel chat-main">
+        ${selectedThread ? `
+          <div class="chat-header">
+            <div>
+              <h3 style="font-size: 1.15rem;">${selectedThread.customer_name}</h3>
+              <span style="font-size: 0.8rem; color: var(--text-muted);">${selectedThread.phone_number}</span>
+            </div>
+            <span class="badge badge-channel">WhatsApp AI Chat</span>
+          </div>
+
+          <div class="chat-messages" id="chat-messages-container">
+            ${(selectedThread.messages || []).map((m) => `
+              <div class="message-bubble ${m.direction}">
+                <div>${m.body}</div>
+                <div class="message-time">
+                  ${new Date(m.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                  ${m.direction === 'outbound' ? ' ✓✓' : ''}
+                </div>
+              </div>
             `).join('')}
-          </tbody>
-        </table>
+          </div>
+        ` : `
+          <div style="display:flex; align-items:center; justify-content:center; height:100%; color:var(--text-muted);">
+            Select a conversation thread to inspect
+          </div>
+        `}
       </div>
     </div>
   `;
+
+  // Scroll chat messages to bottom
+  const msgContainer = document.getElementById('chat-messages-container');
+  if (msgContainer) {
+    msgContainer.scrollTop = msgContainer.scrollHeight;
+  }
 }
 
+function selectChatThread(phone) {
+  activeThreadPhone = phone;
+  renderView('conversations');
+}
+
+// ----------------------------------------------------
+// ANALYTICS VIEW (PHASE 6)
+// ----------------------------------------------------
 async function renderAnalyticsView(container) {
   const analytics = await api('/analytics/summary');
+
+  const rev = parseFloat(analytics.total_revenue || 0);
+  const totalOrders = analytics.total_orders || 0;
+  const pendingOrders = analytics.pending_orders || 0;
+  const totalReservations = analytics.total_reservations || 0;
+  const lowStock = analytics.low_stock_items_count || 0;
+  const customers = analytics.total_customers || 0;
+
+  const completedOrders = Math.max(0, totalOrders - pendingOrders);
+  const completionRate = totalOrders > 0 ? ((completedOrders / totalOrders) * 100).toFixed(0) : 100;
+
   container.innerHTML = `
     <div class="stats-grid">
-      <div class="glass-panel stat-card">
-        <div class="stat-icon" style="background: rgba(99, 102, 241, 0.2); color: var(--primary);">
-          <i data-lucide="shopping-bag"></i>
-        </div>
-        <div class="stat-info">
-          <div class="value">${analytics.total_orders || 0}</div>
-          <div class="label">Total Orders</div>
-        </div>
-      </div>
       <div class="glass-panel stat-card">
         <div class="stat-icon" style="background: rgba(16, 185, 129, 0.2); color: var(--accent-emerald);">
           <i data-lucide="indian-rupee"></i>
         </div>
         <div class="stat-info">
-          <div class="value">₹${parseFloat(analytics.total_revenue || 0).toFixed(2)}</div>
+          <div class="value">₹${rev.toFixed(2)}</div>
           <div class="label">Total Revenue</div>
+        </div>
+      </div>
+
+      <div class="glass-panel stat-card">
+        <div class="stat-icon" style="background: rgba(99, 102, 241, 0.2); color: var(--primary);">
+          <i data-lucide="shopping-bag"></i>
+        </div>
+        <div class="stat-info">
+          <div class="value">${totalOrders}</div>
+          <div class="label">Total Orders</div>
+        </div>
+      </div>
+
+      <div class="glass-panel stat-card">
+        <div class="stat-icon" style="background: rgba(6, 182, 212, 0.2); color: var(--accent-cyan);">
+          <i data-lucide="users"></i>
+        </div>
+        <div class="stat-info">
+          <div class="value">${customers}</div>
+          <div class="label">Active Customers</div>
+        </div>
+      </div>
+
+      <div class="glass-panel stat-card">
+        <div class="stat-icon" style="background: rgba(139, 92, 246, 0.2); color: var(--accent-purple);">
+          <i data-lucide="calendar"></i>
+        </div>
+        <div class="stat-info">
+          <div class="value">${totalReservations}</div>
+          <div class="label">Confirmed Reservations</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.5rem; margin-top: 1rem;">
+      <div class="glass-panel chart-card">
+        <h3>Order Fulfillment Breakdown</h3>
+        <div>
+          <div style="display:flex; justify-content:space-between; font-size:0.9rem;">
+            <span>Completed Orders (${completedOrders})</span>
+            <span>${completionRate}%</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" style="width: ${completionRate}%; background: linear-gradient(90deg, var(--accent-emerald), var(--accent-cyan));"></div>
+          </div>
+        </div>
+
+        <div>
+          <div style="display:flex; justify-content:space-between; font-size:0.9rem;">
+            <span>Pending Orders (${pendingOrders})</span>
+            <span>${100 - completionRate}%</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" style="width: ${100 - completionRate}%; background: linear-gradient(90deg, var(--accent-amber), var(--accent-rose));"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass-panel chart-card">
+        <h3>Inventory & Operations Health</h3>
+        <div style="display:flex; align-items:center; justify-content:space-between; padding: 0.75rem 0; border-bottom:1px solid var(--border-glass);">
+          <span style="color:var(--text-muted);">Low Stock Alerts</span>
+          <span class="badge ${lowStock > 0 ? 'badge-cancelled' : 'badge-completed'}">${lowStock} items low</span>
+        </div>
+        <div style="display:flex; align-items:center; justify-content:space-between; padding: 0.75rem 0;">
+          <span style="color:var(--text-muted);">Primary AI Communication Channel</span>
+          <span class="badge badge-channel">Twilio WhatsApp</span>
         </div>
       </div>
     </div>
@@ -634,6 +754,7 @@ window.openCreateCatalogModal = openCreateCatalogModal;
 window.openCreateCustomerModal = openCreateCustomerModal;
 window.openCreateReservationModal = openCreateReservationModal;
 window.updateOrderStatus = updateOrderStatus;
+window.selectChatThread = selectChatThread;
 window.closeModal = closeModal;
 
 // Initialize on DOM load
