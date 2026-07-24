@@ -170,7 +170,50 @@ async def update_order(
         raise NotFoundError(f"Order with id {order_id} not found")
 
     if req.status:
+        old_status = order.status
         order = await repo.update_status(order_id, req.status, changed_by=current_user.name)
+        
+        # Trigger outbound notification if status changed
+        if order and old_status != req.status and order.customer_id:
+            from app.db.repositories.customer import CustomerRepository
+            from app.db.models.message import InboundMessage, OutboundMessage
+            from app.core.sms import twilio_service
+            from sqlalchemy.future import select
+
+            cust_repo = CustomerRepository(db)
+            customer = await cust_repo.get(order.customer_id)
+
+            if customer and customer.phone_number:
+                # Check if customer communicates via WhatsApp
+                res = await db.execute(
+                    select(InboundMessage)
+                    .where(InboundMessage.from_number == f"whatsapp:{customer.phone_number}")
+                    .limit(1)
+                )
+                is_whatsapp = res.scalars().first() is not None
+                to_number = f"whatsapp:{customer.phone_number}" if is_whatsapp else customer.phone_number
+
+                # Determine notification content
+                status_msg = f"Your order #{order.order_number} status has been updated to: {req.status.upper()}."
+                if req.status.lower() == "ready":
+                    status_msg = f"Your order #{order.order_number} is ready for pickup/delivery!"
+                elif req.status.lower() == "completed":
+                    status_msg = f"Your order #{order.order_number} has been completed. Thank you for your business!"
+                elif req.status.lower() == "cancelled":
+                    status_msg = f"Your order #{order.order_number} has been cancelled."
+
+                # Send outbound message
+                twilio_sid = twilio_service.send_message(to_number=to_number, body=status_msg)
+                
+                outbound_msg = OutboundMessage(
+                    business_id=order.business_id,
+                    to_number=to_number,
+                    body=status_msg,
+                    message_sid=twilio_sid,
+                    status="sent" if twilio_sid else "failed",
+                )
+                db.add(outbound_msg)
+                await db.flush()
 
     if req.notes is not None:
         order.notes = req.notes

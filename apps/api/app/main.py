@@ -38,3 +38,7 @@ if DASHBOARD_DIR.exists():
 @app.get("/", include_in_schema=False)
 async def root_redirect():
     return RedirectResponse(url="/dashboard")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

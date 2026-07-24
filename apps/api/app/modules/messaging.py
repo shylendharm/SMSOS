@@ -80,7 +80,6 @@ async def process_inbound_sms_pipeline(
             business_id=business.id,
             phone_number=clean_from,
             name=payload.get("ProfileName", f"Customer {clean_from[-4:]}"),
-            metadata_json={"whatsapp": from_number.startswith("whatsapp:")},
         )
         db.add(customer)
         await db.flush()
@@ -139,12 +138,34 @@ async def process_inbound_sms_pipeline(
 
     history = (conv_state.context or {}).get("messages", [])[-5:]
 
+    # Fetch customer's recent orders for status context
+    from sqlalchemy.orm import selectinload
+    orders_query = await db.execute(
+        select(Order)
+        .where(Order.customer_id == customer.id, Order.business_id == business.id)
+        .options(selectinload(Order.items))
+        .order_by(Order.created_at.desc())
+        .limit(3)
+    )
+    recent_orders = orders_query.scalars().all()
+    
+    order_context = []
+    for o in recent_orders:
+        order_context.append({
+            "order_number": o.order_number,
+            "status": o.status,
+            "total_amount": float(o.total_amount) if o.total_amount else 0.0,
+            "items": [item.item_name for item in o.items],
+            "created_at": o.created_at.isoformat() if o.created_at else None,
+        })
+
     # 7. Execute AI Processing with Gemini
     ai_result = await gemini_service.process_customer_message(
         message_text=body,
         catalog_context=catalog_context,
         conversation_history=history,
         business_name=business.name,
+        order_context=order_context,
     )
 
     # 8. Record Intent Prediction
@@ -162,13 +183,16 @@ async def process_inbound_sms_pipeline(
 
     if ai_result.intent == "PLACE_ORDER":
         # Create an Order draft
+        from app.db.repositories.order import OrderRepository
+        order_repo = OrderRepository(db)
+        next_num = await order_repo.get_next_order_number(business.id)
+
         order = Order(
             business_id=business.id,
             customer_id=customer.id,
-            order_number=f"ORD-{uuid.uuid4().hex[:6].upper()}",
+            order_number=next_num,
             status="pending",
             total_amount=Decimal("0.00"),
-            channel="whatsapp" if from_number.startswith("whatsapp:") else "sms",
             notes=f"AI parsed order from: '{body}'",
         )
         db.add(order)
@@ -194,11 +218,9 @@ async def process_inbound_sms_pipeline(
 
                 order_item = OrderItem(
                     order_id=order.id,
-                    catalog_item_id=matched_catalog.id if matched_catalog else None,
                     item_name=item_name,
-                    unit_price=price,
                     quantity=qty,
-                    total_price=line_total,
+                    unit_price=price,
                 )
                 db.add(order_item)
 

@@ -15,12 +15,27 @@ except ImportError:
     HAS_GENAI = False
 
 
+class OrderItemEntity(BaseModel):
+    item_name: str = Field(description="Name of the catalog item being ordered")
+    quantity: int = Field(default=1, description="Quantity ordered")
+
+
 class IntentResult(BaseModel):
     intent: str = Field(description="Detected intent: INQUIRY, PLACE_ORDER, RESERVATION, CHECK_STATUS, OTHER")
     confidence: float = Field(default=0.9, description="Confidence score between 0.0 and 1.0")
     language: str = Field(default="english", description="Detected language: english, tamil, or tanglish")
-    entities: Dict[str, Any] = Field(default_factory=dict, description="Extracted entities like items, quantities, reservation time, customer name, etc.")
+    items: List[OrderItemEntity] = Field(default_factory=list, description="List of items extracted if placing an order")
+    party_size: Optional[int] = Field(default=None, description="Party size/count extracted if reserving a table/booking")
     reply_text: str = Field(description="Drafted response to customer in their input language (English, Tamil, or Tanglish)")
+
+    @property
+    def entities(self) -> Dict[str, Any]:
+        res = {}
+        if self.items:
+            res["items"] = [{"item_name": x.item_name, "quantity": x.quantity} for x in self.items]
+        if self.party_size is not None:
+            res["party_size"] = self.party_size
+        return res
 
 
 class GeminiAIService:
@@ -36,6 +51,7 @@ class GeminiAIService:
         catalog_context: Optional[List[Dict[str, Any]]] = None,
         conversation_history: Optional[List[Dict[str, str]]] = None,
         business_name: str = "SMSOS Business",
+        order_context: Optional[List[Dict[str, Any]]] = None,
     ) -> IntentResult:
         """
         Processes customer message, extracts intent/entities, and drafts reply text in the customer's language.
@@ -46,6 +62,7 @@ class GeminiAIService:
 
         catalog_str = json.dumps(catalog_context or [], ensure_ascii=False)
         history_str = json.dumps(conversation_history or [], ensure_ascii=False)
+        order_str = json.dumps(order_context or [], ensure_ascii=False)
 
         system_instruction = f"""
 You are an AI Assistant for '{business_name}'. You handle incoming customer messages on WhatsApp/SMS.
@@ -57,6 +74,9 @@ Available Business Catalog:
 Recent Conversation History:
 {history_str}
 
+Recent Orders Status Context for this Customer:
+{order_str}
+
 Your task:
 1. Detect user's primary intent:
    - 'INQUIRY': Asking about products, prices, stock, opening hours, location.
@@ -66,13 +86,15 @@ Your task:
    - 'OTHER': Greetings, general feedback, or unclear messages.
 2. Detect language ('english', 'tamil', 'tanglish').
 3. Extract relevant entities (e.g. item_name, quantity, date, time, customer_name, order_id).
-4. Generate a polite, helpful, and concise reply in the SAME language as the customer (English, Tamil, or Tanglish). If ordering, summarize items and total price if known. Keep responses brief for SMS/WhatsApp.
+4. Generate a polite, helpful, and concise reply in the SAME language as the customer (English, Tamil, or Tanglish). 
+   - If they are checking order status (CHECK_STATUS), use 'Recent Orders Status Context' to inform them of the exact status of their order (e.g. order #1 is pending/ready/completed/cancelled). If there are no recent orders in the context, politely state you couldn't find any.
+   - If ordering, summarize items and total price if known. Keep responses brief for SMS/WhatsApp.
 """
 
         try:
             # We use gemini-1.5-flash or gemini-2.5-flash for speed
             response = self.client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3.5-flash",
                 contents=message_text,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
@@ -106,7 +128,8 @@ Your task:
             intent=intent,
             confidence=0.5,
             language="english",
-            entities={},
+            items=[],
+            party_size=None,
             reply_text="Thank you for reaching out! We received your message and will update you shortly.",
         )
 

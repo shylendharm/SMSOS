@@ -10,8 +10,8 @@ class InboundMessage(Base, UUIDPKMixin, TimestampMixin):
 
     business_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False)
     message_sid: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    from_number: Mapped[str] = mapped_column(String(20), nullable=False)
-    to_number: Mapped[str] = mapped_column(String(20), nullable=False)
+    from_number: Mapped[str] = mapped_column(String(64), nullable=False)
+    to_number: Mapped[str] = mapped_column(String(64), nullable=False)
     body: Mapped[str] = mapped_column(nullable=False)
     raw_payload: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}", nullable=False)
     processed: Mapped[bool] = mapped_column(default=False, nullable=False)
@@ -28,7 +28,7 @@ class OutboundMessage(Base, UUIDPKMixin, TimestampMixin):
     __tablename__ = "outbound_messages"
 
     business_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False)
-    to_number: Mapped[str] = mapped_column(String(20), nullable=False)
+    to_number: Mapped[str] = mapped_column(String(64), nullable=False)
     body: Mapped[str] = mapped_column(nullable=False)
     message_sid: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="queued", nullable=False)

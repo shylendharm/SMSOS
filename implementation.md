@@ -94,3 +94,29 @@ This document outlines the implementation plan for the remaining phases (Phases 
 - Expose the local server using `ngrok` or similar.
 - Configure the Twilio WhatsApp Sandbox webhook URL to point to the local server.
 - Send test messages in English and Tanglish via WhatsApp to verify AI responses and DB state changes.
+
+---
+
+## [NEW] Live Order Status Context & Automatic Outbound Notifications Plan
+
+### 1. Inbound Order Status Tracking (AI Context)
+We will feed live order status into the Gemini prompt context so that when customers ask "Where is my order?" or check status, Gemini will know the exact status (e.g. pending, ready, completed, cancelled) and respond accurately.
+
+#### [MODIFY] [messaging.py](file:///c:/Users/smart/Desktop/SMSOS/apps/api/app/modules/messaging.py)
+- Query the database for the customer's last 3 orders (loading status, total amount, items, and creation date).
+- Pass this order status list into `gemini_service.process_customer_message(...)`.
+
+#### [MODIFY] [ai.py](file:///c:/Users/smart/Desktop/SMSOS/apps/api/app/core/ai.py)
+- Accept the `order_context` parameter.
+- Append a human-readable summary of the customer's recent orders directly into the Gemini prompt `system_instruction`.
+- Direct the system prompt to use this context to answer status check queries (intent: `CHECK_STATUS`).
+
+### 2. Outbound Status Notifications (Dashboard Trigger)
+When the business owner updates an order status in the dashboard, the system will automatically send a push message (WhatsApp/SMS) notifying the customer.
+
+#### [MODIFY] [orders.py](file:///c:/Users/smart/Desktop/SMSOS/apps/api/app/api/v1/orders.py)
+- In the `PUT /orders/{order_id}` handler:
+  - If `req.status` is changed, retrieve the order and the customer's phone number.
+  - Query the history (`inbound_messages` / `outbound_messages`) to detect if the customer's active channel is `whatsapp:` or `sms`.
+  - Format a notification template based on the status (e.g., "Your order is ready", "Your order has been completed", etc.).
+  - Send the notification message using `twilio_service.send_message`.

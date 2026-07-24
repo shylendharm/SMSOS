@@ -9,7 +9,7 @@ class Business(Base, UUIDPKMixin, TimestampMixin):
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     business_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    phone_number: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
+    phone_number: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     timezone: Mapped[str] = mapped_column(String(50), default="UTC", nullable=False)
     locale: Mapped[str] = mapped_column(String(10), default="en", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
