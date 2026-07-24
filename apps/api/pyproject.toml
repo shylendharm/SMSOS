@@ -17,6 +17,7 @@ dependencies = [
     "passlib[argon2]>=1.7.4",
     "twilio>=9.2.0",
     "python-multipart>=0.0.9",
+    "google-genai>=0.1.0",
 ]
 
 [project.optional-dependencies]
