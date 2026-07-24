@@ -30,7 +30,7 @@ setup_middlewares(app)
 
 app.include_router(api_router, prefix="/api/v1")
 
-DASHBOARD_DIR = Path(__file__).resolve().parent.parent / "dashboard"
+DASHBOARD_DIR = Path(__file__).resolve().parent.parent.parent / "dashboard"
 if DASHBOARD_DIR.exists():
     app.mount("/dashboard", StaticFiles(directory=str(DASHBOARD_DIR), html=True), name="dashboard")
 
