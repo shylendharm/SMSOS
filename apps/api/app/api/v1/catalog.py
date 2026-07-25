@@ -75,3 +75,18 @@ async def create_catalog_item(
         is_available=req.is_available,
     )
     return format_catalog_response(item)
+
+
+@router.delete("/catalog/{item_id}")
+async def delete_catalog_item(
+    item_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    repo = CatalogRepository(db)
+    item = await repo.get(item_id)
+    if not item or item.business_id != current_user.business_id:
+        from app.core.exceptions import NotFoundError
+        raise NotFoundError(f"Catalog item with id {item_id} not found")
+    await repo.delete(item_id)
+    return {"status": "success", "message": "Item deleted successfully"}

@@ -160,3 +160,17 @@ async def update_reservation(
     await db.commit()
     await db.refresh(res)
     return format_reservation_response(res)
+
+
+@router.delete("/reservations/{reservation_id}")
+async def delete_reservation(
+    reservation_id: uuid.UUID = Path(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    repo = ReservationRepository(db)
+    res = await repo.get(reservation_id)
+    if not res or res.business_id != current_user.business_id:
+        raise NotFoundError(f"Reservation with id {reservation_id} not found")
+    await repo.delete(reservation_id)
+    return {"status": "success", "message": "Reservation deleted successfully"}

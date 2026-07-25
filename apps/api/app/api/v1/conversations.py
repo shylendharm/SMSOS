@@ -89,3 +89,41 @@ async def list_conversations(
     result_list.sort(key=lambda t: t["last_updated"], reverse=True)
 
     return result_list
+
+
+@router.delete("/conversations/{phone_number}")
+async def delete_conversation(
+    phone_number: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from sqlalchemy import delete
+    from app.db.models.conversation import ConversationState
+    biz_id = current_user.business_id
+
+    # Delete inbound messages
+    await db.execute(
+        delete(InboundMessage).where(
+            InboundMessage.business_id == biz_id,
+            InboundMessage.from_number == phone_number,
+        )
+    )
+
+    # Delete outbound messages
+    await db.execute(
+        delete(OutboundMessage).where(
+            OutboundMessage.business_id == biz_id,
+            OutboundMessage.to_number == phone_number,
+        )
+    )
+
+    # Delete conversation state
+    await db.execute(
+        delete(ConversationState).where(
+            ConversationState.business_id == biz_id,
+            ConversationState.from_number == phone_number,
+        )
+    )
+
+    await db.commit()
+    return {"status": "success", "message": "Conversation thread deleted successfully"}

@@ -221,3 +221,17 @@ async def update_order(
     await db.commit()
     order_full = await repo.get_by_number(order.order_number, current_user.business_id)
     return format_order_response(order_full or order)
+
+
+@router.delete("/orders/{order_id}")
+async def delete_order(
+    order_id: uuid.UUID = Path(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    repo = OrderRepository(db)
+    order = await repo.get(order_id)
+    if not order or order.business_id != current_user.business_id:
+        raise NotFoundError(f"Order with id {order_id} not found")
+    await repo.delete(order_id)
+    return {"status": "success", "message": "Order deleted successfully"}

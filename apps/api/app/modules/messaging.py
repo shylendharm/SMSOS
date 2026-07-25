@@ -47,7 +47,12 @@ async def process_inbound_sms_pipeline(
 
     # 2. Get Business (match by to_number or get default business)
     clean_to = to_number.replace("whatsapp:", "")
-    result = await db.execute(select(Business).where(Business.is_active == True))
+    result = await db.execute(
+        select(Business).where(
+            Business.is_active == True,
+            Business.name != "Session Lifecycle Test"
+        )
+    )
     businesses = result.scalars().all()
     
     business = None
@@ -159,6 +164,14 @@ async def process_inbound_sms_pipeline(
             "created_at": o.created_at.isoformat() if o.created_at else None,
         })
 
+    # Fetch business table count from settings
+    from app.db.models.business import BusinessSettings
+    settings_res = await db.execute(
+        select(BusinessSettings).where(BusinessSettings.business_id == business.id)
+    )
+    b_settings = settings_res.scalars().first()
+    table_count = b_settings.table_count if (b_settings and b_settings.table_count is not None) else 10
+
     # 7. Execute AI Processing with Gemini
     ai_result = await gemini_service.process_customer_message(
         message_text=body,
@@ -166,6 +179,8 @@ async def process_inbound_sms_pipeline(
         conversation_history=history,
         business_name=business.name,
         order_context=order_context,
+        table_count=table_count,
+        business_location=business.location,
     )
 
     # 8. Record Intent Prediction
@@ -228,15 +243,53 @@ async def process_inbound_sms_pipeline(
         conv_state.state = "ORDER_PENDING"
 
     elif ai_result.intent == "RESERVATION":
-        reservation = Reservation(
-            business_id=business.id,
-            customer_id=customer.id,
-            party_size=int(ai_result.entities.get("party_size", 2)),
-            status="confirmed",
-            notes=f"AI parsed reservation from: '{body}'",
-        )
-        db.add(reservation)
-        conv_state.state = "RESERVATION_CONFIRMED"
+        if ai_result.is_reservation_complete:
+            from datetime import datetime, timezone, timedelta
+            res_date_str = ai_result.entities.get("reservation_date")
+            res_time_str = ai_result.entities.get("reservation_time")
+            parsed_dt = None
+            
+            try:
+                import dateutil.parser
+                if res_date_str and res_time_str:
+                    parsed_dt = dateutil.parser.parse(f"{res_date_str} {res_time_str}", default=datetime.now(timezone.utc), fuzzy=True)
+                elif res_date_str:
+                    parsed_dt = dateutil.parser.parse(res_date_str, default=datetime.now(timezone.utc), fuzzy=True)
+                elif res_time_str:
+                    parsed_dt = dateutil.parser.parse(res_time_str, default=datetime.now(timezone.utc), fuzzy=True)
+            except Exception:
+                pass
+                
+            if not parsed_dt:
+                try:
+                    if res_date_str and len(res_date_str) == 10:
+                        if res_time_str:
+                            parsed_dt = datetime.fromisoformat(f"{res_date_str}T{res_time_str}")
+                        else:
+                            parsed_dt = datetime.fromisoformat(res_date_str)
+                except Exception:
+                    pass
+                    
+            if not parsed_dt:
+                parsed_dt = datetime.now(timezone.utc) + timedelta(hours=2)
+                
+            if parsed_dt.tzinfo is None:
+                parsed_dt = parsed_dt.replace(tzinfo=timezone.utc)
+                
+            cust_name = ai_result.entities.get("customer_name")
+            reservation = Reservation(
+                business_id=business.id,
+                customer_id=customer.id,
+                customer_name=cust_name or customer.name,
+                reserved_at=parsed_dt,
+                party_size=int(ai_result.entities.get("party_size", 2)),
+                status="confirmed",
+                notes=f"AI parsed reservation from: '{body}'",
+            )
+            db.add(reservation)
+            conv_state.state = "RESERVATION_CONFIRMED"
+        else:
+            conv_state.state = "RESERVATION_INCOMPLETE"
 
     # Update conversation state context
     updated_history = history + [

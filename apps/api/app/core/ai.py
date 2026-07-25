@@ -26,6 +26,10 @@ class IntentResult(BaseModel):
     language: str = Field(default="english", description="Detected language: english, tamil, or tanglish")
     items: List[OrderItemEntity] = Field(default_factory=list, description="List of items extracted if placing an order")
     party_size: Optional[int] = Field(default=None, description="Party size/count extracted if reserving a table/booking")
+    reservation_date: Optional[str] = Field(default=None, description="Date of reservation, e.g. YYYY-MM-DD or today/tomorrow/monday")
+    reservation_time: Optional[str] = Field(default=None, description="Time of reservation, e.g. HH:MM or 4 PM/noon")
+    customer_name: Optional[str] = Field(default=None, description="Booking customer name for the reservation")
+    is_reservation_complete: bool = Field(default=False, description="True ONLY if the customer has fully specified the reservation date, time, party size, and customer name")
     reply_text: str = Field(description="Drafted response to customer in their input language (English, Tamil, or Tanglish)")
 
     @property
@@ -35,6 +39,13 @@ class IntentResult(BaseModel):
             res["items"] = [{"item_name": x.item_name, "quantity": x.quantity} for x in self.items]
         if self.party_size is not None:
             res["party_size"] = self.party_size
+        if self.reservation_date is not None:
+            res["reservation_date"] = self.reservation_date
+        if self.reservation_time is not None:
+            res["reservation_time"] = self.reservation_time
+        if self.customer_name is not None:
+            res["customer_name"] = self.customer_name
+        res["is_reservation_complete"] = self.is_reservation_complete
         return res
 
 
@@ -45,6 +56,14 @@ class GeminiAIService:
         if self.api_key and HAS_GENAI:
             self.client = genai.Client(api_key=self.api_key)
 
+    def _fallback_response(self, text: str) -> IntentResult:
+        return IntentResult(
+            intent="OTHER",
+            confidence=0.5,
+            language="english",
+            reply_text="Thank you for reaching out! We received your message and will update you shortly."
+        )
+
     async def process_customer_message(
         self,
         message_text: str,
@@ -52,6 +71,8 @@ class GeminiAIService:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         business_name: str = "SMSOS Business",
         order_context: Optional[List[Dict[str, Any]]] = None,
+        table_count: int = 10,
+        business_location: Optional[str] = None,
     ) -> IntentResult:
         """
         Processes customer message, extracts intent/entities, and drafts reply text in the customer's language.
@@ -71,6 +92,12 @@ You support messages in English, Tamil (தமிழ்), and Tanglish (Tamil wr
 Available Business Catalog:
 {catalog_str}
 
+Shop Location:
+The shop is located at: {business_location or "T. Nagar, Chennai"}
+
+Shop Capacity:
+The shop has a total of {table_count} dining tables available for reservations.
+
 Recent Conversation History:
 {history_str}
 
@@ -86,9 +113,13 @@ Your task:
    - 'OTHER': Greetings, general feedback, or unclear messages.
 2. Detect language ('english', 'tamil', 'tanglish').
 3. Extract relevant entities (e.g. item_name, quantity, date, time, customer_name, order_id).
-4. Generate a polite, helpful, and concise reply in the SAME language as the customer (English, Tamil, or Tanglish). 
-   - If they are checking order status (CHECK_STATUS), use 'Recent Orders Status Context' to inform them of the exact status of their order (e.g. order #1 is pending/ready/completed/cancelled). If there are no recent orders in the context, politely state you couldn't find any.
-   - If ordering, summarize items and total price if known. Keep responses brief for SMS/WhatsApp.
+4. Generate a polite, helpful, and concise reply in the SAME language as the customer (English, Tamil, or Tanglish).    - If they are checking order status (CHECK_STATUS), use 'Recent Orders Status Context' to inform them of the exact status of their order (e.g. order #1 is pending/ready/completed/cancelled). If there are no recent orders in the context, politely state you couldn't find any.
+    - If they are requesting a table reservation (RESERVATION):
+      - Identify if the customer has specified: (1) reservation date, (2) reservation time, (3) party size (number of members/guests), and (4) customer name (booking name).
+      - Set `is_reservation_complete = True` ONLY if all four details (date, time, party size, and customer name) are clearly specified by the customer in their message or the recent conversation history.
+      - If ANY details are missing (e.g., they said "Book 2 tables" but gave no time or name, or "Book a table today at 4:00" but gave no party size or name), set `is_reservation_complete = False` and use `reply_text` to politely ask them to specify the missing details (date, time, number of members, or booking name) in their input language (English, Tamil, or Tanglish).
+      - Once all details are complete, set `is_reservation_complete = True` and use `reply_text` to confirm the booking politely and mention that the shop has {table_count} tables available.
+    - If ordering, summarize items and total price if known. Keep responses brief for SMS/WhatsApp.
 """
 
         try:

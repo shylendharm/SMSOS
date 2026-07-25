@@ -63,19 +63,45 @@ function loggerError(msg) {
   console.error('[SMSOS Dashboard]', msg);
 }
 
+function showAuthCard(type) {
+  document.getElementById('login-card').style.display = type === 'login' ? 'block' : 'none';
+  document.getElementById('signup-card').style.display = type === 'signup' ? 'block' : 'none';
+  document.getElementById('onboarding-card').style.display = type === 'onboarding' ? 'block' : 'none';
+}
+
+async function loadUserProfile() {
+  if (!state.token) return;
+  try {
+    const profile = await api('/auth/profile');
+    state.user = profile;
+    const nameEl = document.getElementById('user-name');
+    const profileNameEl = document.getElementById('profile-user-name');
+    const avatarEl = document.getElementById('user-avatar');
+    if (nameEl) nameEl.innerText = profile.name || 'Owner';
+    if (profileNameEl) profileNameEl.innerText = profile.name || 'Owner';
+    if (avatarEl && profile.name) avatarEl.innerText = profile.name.charAt(0).toUpperCase();
+  } catch (err) {
+    loggerError('Failed to load user profile: ' + err.message);
+  }
+}
+
 // Auth Handlers
 function initAuth() {
   const loginForm = document.getElementById('login-form');
+  const signupForm = document.getElementById('signup-form');
+  const onboardingForm = document.getElementById('onboarding-form');
   const authScreen = document.getElementById('auth-screen');
   const appScreen = document.getElementById('app');
 
   if (state.token) {
     authScreen.style.display = 'none';
     appScreen.style.display = 'flex';
+    loadUserProfile();
     initRouter();
   } else {
     authScreen.style.display = 'flex';
     appScreen.style.display = 'none';
+    showAuthCard('login');
   }
 
   loginForm.addEventListener('submit', async (e) => {
@@ -93,13 +119,131 @@ function initAuth() {
       showToast('Logged in successfully!');
       authScreen.style.display = 'none';
       appScreen.style.display = 'flex';
+      await loadUserProfile();
       initRouter();
     } catch (err) {
       showToast(err.message || 'Login failed. Check credentials.', 'error');
     }
   });
 
+  if (signupForm) {
+    signupForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('signup-name').value;
+      const email = document.getElementById('signup-email').value;
+      const password = document.getElementById('signup-password').value;
+
+      try {
+        const data = await api('/auth/signup', {
+          method: 'POST',
+          body: JSON.stringify({ name, email, password }),
+        });
+        state.token = data.access_token;
+        localStorage.setItem('smsos_token', state.token);
+        showToast('Account created successfully! Please complete your shop setup.');
+        showAuthCard('onboarding');
+      } catch (err) {
+        showToast(err.message || 'Signup failed.', 'error');
+      }
+    });
+  }
+
+  if (onboardingForm) {
+    onboardingForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const business_name = document.getElementById('onboard-biz-name').value;
+      const phone_number = document.getElementById('onboard-phone').value;
+      const location = document.getElementById('onboard-location').value;
+
+      try {
+        await api('/auth/onboarding', {
+          method: 'POST',
+          body: JSON.stringify({ business_name, phone_number, location }),
+        });
+        showToast('Shop profile set up successfully!');
+        authScreen.style.display = 'none';
+        appScreen.style.display = 'flex';
+        await loadUserProfile();
+        initRouter();
+      } catch (err) {
+        showToast(err.message || 'Onboarding failed.', 'error');
+      }
+    });
+  }
+
   document.getElementById('logout-btn').addEventListener('click', logout);
+
+  document.addEventListener('click', (e) => {
+    const dropdown = document.getElementById('profile-dropdown-menu');
+    const menuBtn = document.getElementById('profile-menu-btn');
+    if (dropdown && menuBtn && !menuBtn.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.style.display = 'none';
+    }
+  });
+}
+
+function toggleProfileDropdown() {
+  const dropdown = document.getElementById('profile-dropdown-menu');
+  if (dropdown) {
+    dropdown.style.display = dropdown.style.display === 'flex' ? 'none' : 'flex';
+  }
+}
+
+async function openProfileModal() {
+  const dropdown = document.getElementById('profile-dropdown-menu');
+  if (dropdown) dropdown.style.display = 'none';
+
+  let profile = state.user;
+  try {
+    profile = await api('/auth/profile');
+    state.user = profile;
+  } catch (err) {}
+
+  openModal('Edit Owner Profile', `
+    <div class="form-group">
+      <label>Full Name</label>
+      <input id="modal-prof-name" class="form-control" value="${profile?.name || ''}" required>
+    </div>
+    <div class="form-group">
+      <label>Email Address</label>
+      <input id="modal-prof-email" type="email" class="form-control" value="${profile?.email || ''}" required>
+    </div>
+    <div class="form-group">
+      <label>New Password (leave blank to keep current)</label>
+      <input id="modal-prof-pass" type="password" class="form-control" placeholder="••••••••">
+    </div>
+    <hr style="border-color: var(--border); margin: 1rem 0;">
+    <div class="form-group">
+      <label>Business Name</label>
+      <input id="modal-prof-biz-name" class="form-control" value="${profile?.business_name || ''}" required>
+    </div>
+    <div class="form-group">
+      <label>Shop Phone Number</label>
+      <input id="modal-prof-phone" class="form-control" value="${profile?.phone_number || ''}" required>
+    </div>
+    <div class="form-group">
+      <label>Shop Address / Location</label>
+      <input id="modal-prof-location" class="form-control" value="${profile?.location || ''}">
+    </div>
+  `, async () => {
+    const name = document.getElementById('modal-prof-name').value;
+    const email = document.getElementById('modal-prof-email').value;
+    const password = document.getElementById('modal-prof-pass').value;
+    const business_name = document.getElementById('modal-prof-biz-name').value;
+    const phone_number = document.getElementById('modal-prof-phone').value;
+    const location = document.getElementById('modal-prof-location').value;
+
+    const body = { name, email, business_name, phone_number, location };
+    if (password) body.password = password;
+
+    await api('/auth/profile', {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+
+    showToast('Profile updated successfully!');
+    await loadUserProfile();
+  });
 }
 
 function logout() {
@@ -107,6 +251,7 @@ function logout() {
   localStorage.removeItem('smsos_token');
   document.getElementById('auth-screen').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
+  showAuthCard('login');
 }
 
 // Router
@@ -268,8 +413,9 @@ async function renderOrdersView(container) {
                     <button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.8rem; background:rgba(16,185,129,0.2);" onclick="updateOrderStatus('${o.id}', 'completed')">Complete</button>
                   ` : ''}
                   ${o.status !== 'completed' && o.status !== 'cancelled' ? `
-                    <button class="btn-icon" style="color:var(--accent-rose);" title="Cancel Order" onclick="updateOrderStatus('${o.id}', 'cancelled')"><i data-lucide="x-circle"></i></button>
+                    <button class="btn-icon" style="color:var(--accent-amber);" title="Cancel Order" onclick="updateOrderStatus('${o.id}', 'cancelled')"><i data-lucide="x-circle"></i></button>
                   ` : ''}
+                  <button class="btn-icon" style="color:var(--accent-rose);" title="Delete Order" onclick="deleteOrder('${o.id}')"><i data-lucide="trash-2"></i></button>
                 </td>
               </tr>
             `).join('')}
@@ -348,10 +494,11 @@ async function renderCatalogView(container) {
               <th>Price</th>
               <th>Unit</th>
               <th>Availability</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            ${items.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:2rem;">No items in catalog</td></tr>' : ''}
+            ${items.length === 0 ? '<tr><td colspan="6" style="text-align:center; padding:2rem;">No items in catalog</td></tr>' : ''}
             ${items.map((item) => `
               <tr>
                 <td><strong>${item.name}</strong></td>
@@ -362,6 +509,9 @@ async function renderCatalogView(container) {
                   <span class="badge badge-${item.is_available ? 'active' : 'cancelled'}">
                     ${item.is_available ? 'In Stock' : 'Out of Stock'}
                   </span>
+                </td>
+                <td>
+                  <button class="btn-icon" style="color:var(--accent-rose);" title="Delete Item" onclick="deleteCatalogItem('${item.id}')"><i data-lucide="trash-2"></i></button>
                 </td>
               </tr>
             `).join('')}
@@ -421,15 +571,19 @@ async function renderCustomersView(container) {
               <th>Name</th>
               <th>Phone Number</th>
               <th>Created At</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            ${customers.length === 0 ? '<tr><td colspan="3" style="text-align:center; padding:2rem;">No customers found</td></tr>' : ''}
+            ${customers.length === 0 ? '<tr><td colspan="4" style="text-align:center; padding:2rem;">No customers found</td></tr>' : ''}
             ${customers.map((c) => `
               <tr>
                 <td><strong>${c.name || 'Anonymous'}</strong></td>
                 <td>${c.phone_number}</td>
                 <td>${new Date(c.created_at).toLocaleDateString()}</td>
+                <td>
+                  <button class="btn-icon" style="color:var(--accent-rose);" title="Delete Customer" onclick="deleteCustomer('${c.id}')"><i data-lucide="trash-2"></i></button>
+                </td>
               </tr>
             `).join('')}
           </tbody>
@@ -467,9 +621,22 @@ function openCreateCustomerModal() {
 // ----------------------------------------------------
 async function renderReservationsView(container) {
   const reservations = await api('/reservations');
+  const settings = await api('/business/settings').catch(() => ({ table_count: 10 }));
   state.reservations = reservations;
 
   container.innerHTML = `
+    <div class="glass-panel" style="padding: 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+      <div>
+        <h4 style="margin: 0 0 0.25rem 0; font-size: 1.1rem; color: var(--text-main);">Shop Table Capacity Settings</h4>
+        <p style="margin: 0; font-size: 0.875rem; color: var(--text-muted);">Set total available dining tables in your shop for AI reservation tracking</p>
+      </div>
+      <div style="display: flex; align-items: center; gap: 0.75rem;">
+        <label style="font-size: 0.875rem; font-weight: 500; color: var(--text-main);">Total Tables:</label>
+        <input id="shop-table-count" type="number" min="1" max="500" class="form-control" style="width: 100px; text-align: center;" value="${settings.table_count || 10}">
+        <button class="btn btn-primary" style="padding: 0.4rem 0.8rem; font-size: 0.875rem;" onclick="updateShopTableCapacity()"><i data-lucide="save"></i> Save Capacity</button>
+      </div>
+    </div>
+
     <div class="glass-panel" style="padding: 1.25rem;">
       <div class="table-container">
         <table class="data-table">
@@ -480,10 +647,11 @@ async function renderReservationsView(container) {
               <th>Table/Slot</th>
               <th>Reserved Date/Time</th>
               <th>Status</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            ${reservations.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:2rem;">No reservations found</td></tr>' : ''}
+            ${reservations.length === 0 ? '<tr><td colspan="6" style="text-align:center; padding:2rem;">No reservations found</td></tr>' : ''}
             ${reservations.map((r) => `
               <tr>
                 <td><strong>${r.customer_name || 'Guest'}</strong></td>
@@ -491,6 +659,9 @@ async function renderReservationsView(container) {
                 <td>${r.table_or_slot || 'General'}</td>
                 <td>${new Date(r.reserved_at).toLocaleString()}</td>
                 <td><span class="badge badge-${r.status}">${r.status}</span></td>
+                <td>
+                  <button class="btn-icon" style="color:var(--accent-rose);" title="Delete Reservation" onclick="deleteReservation('${r.id}')"><i data-lucide="trash-2"></i></button>
+                </td>
               </tr>
             `).join('')}
           </tbody>
@@ -578,7 +749,12 @@ async function renderConversationsView(container) {
               <h3 style="font-size: 1.15rem;">${selectedThread.customer_name}</h3>
               <span style="font-size: 0.8rem; color: var(--text-muted);">${selectedThread.phone_number}</span>
             </div>
-            <span class="badge badge-channel">WhatsApp AI Chat</span>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <span class="badge badge-channel">WhatsApp AI Chat</span>
+              <button class="btn" style="padding: 0.35rem 0.7rem; font-size: 0.8rem; background: rgba(239, 68, 68, 0.1); color: var(--accent-rose); border: 1px solid rgba(239, 68, 68, 0.2);" onclick="deleteConversation('${selectedThread.phone_number}')">
+                <i data-lucide="trash-2" style="width: 14px; height: 14px; margin-right: 4px; display: inline-block; vertical-align: middle;"></i> Delete Thread
+              </button>
+            </div>
           </div>
 
           <div class="chat-messages" id="chat-messages-container">
@@ -611,6 +787,18 @@ async function renderConversationsView(container) {
 function selectChatThread(phone) {
   activeThreadPhone = phone;
   renderView('conversations');
+}
+
+async function deleteConversation(phone) {
+  if (!confirm('Are you sure you want to delete this conversation thread? This will clear all chat messages and reset the AI reservation/order flow for this number.')) return;
+  try {
+    await api(`/conversations/${phone}`, { method: 'DELETE' });
+    showToast('Conversation thread deleted and AI context reset!');
+    activeThreadPhone = null;
+    renderView('conversations');
+  } catch (err) {
+    showToast('Failed to delete conversation: ' + err.message, 'error');
+  }
 }
 
 // ----------------------------------------------------
@@ -748,12 +936,79 @@ function closeModal() {
   modalRoot.classList.remove('active');
 }
 
+async function deleteOrder(id) {
+  if (!confirm('Are you sure you want to delete this order?')) return;
+  try {
+    await api(`/orders/${id}`, { method: 'DELETE' });
+    showToast('Order deleted successfully!');
+    renderView('orders');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function deleteCatalogItem(id) {
+  if (!confirm('Are you sure you want to delete this catalog item?')) return;
+  try {
+    await api(`/catalog/${id}`, { method: 'DELETE' });
+    showToast('Catalog item deleted successfully!');
+    renderView('catalog');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function deleteCustomer(id) {
+  if (!confirm('Are you sure you want to delete this customer?')) return;
+  try {
+    await api(`/customers/${id}`, { method: 'DELETE' });
+    showToast('Customer deleted successfully!');
+    renderView('customers');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function deleteReservation(id) {
+  if (!confirm('Are you sure you want to delete this reservation?')) return;
+  try {
+    await api(`/reservations/${id}`, { method: 'DELETE' });
+    showToast('Reservation deleted successfully!');
+    renderView('reservations');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function updateShopTableCapacity() {
+  const countInput = document.getElementById('shop-table-count');
+  const count = parseInt(countInput ? countInput.value : 10);
+  if (isNaN(count) || count < 1) {
+    showToast('Please enter a valid table count', 'error');
+    return;
+  }
+  try {
+    await api('/business/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ table_count: count }),
+    });
+    showToast(`Shop table capacity updated to ${count} tables!`);
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
 // Global Exports
 window.openCreateOrderModal = openCreateOrderModal;
 window.openCreateCatalogModal = openCreateCatalogModal;
 window.openCreateCustomerModal = openCreateCustomerModal;
 window.openCreateReservationModal = openCreateReservationModal;
 window.updateOrderStatus = updateOrderStatus;
+window.deleteOrder = deleteOrder;
+window.deleteCatalogItem = deleteCatalogItem;
+window.deleteCustomer = deleteCustomer;
+window.deleteReservation = deleteReservation;
+window.updateShopTableCapacity = updateShopTableCapacity;
 window.selectChatThread = selectChatThread;
 window.closeModal = closeModal;
 

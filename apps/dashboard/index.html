@@ -12,8 +12,9 @@
 
   <!-- Auth Screen -->
   <div id="auth-screen">
-    <div class="glass-panel auth-card">
-      <div class="auth-brand">
+    <!-- Login View -->
+    <div class="glass-panel auth-card" id="login-card">
+      <div class="brand">
         <div class="brand-icon">
           <i data-lucide="message-square-code"></i>
         </div>
@@ -33,6 +34,72 @@
         </div>
         <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">
           <i data-lucide="log-in"></i> Sign In to Dashboard
+        </button>
+      </form>
+      <div style="text-align: center; margin-top: 1rem; font-size: 0.875rem; color: var(--text-muted);">
+        Don't have an account? <a href="#" onclick="showAuthCard('signup'); return false;" style="color: var(--primary); text-decoration: underline;">Sign Up</a>
+      </div>
+    </div>
+
+    <!-- Signup View -->
+    <div class="glass-panel auth-card" id="signup-card" style="display: none;">
+      <div class="brand">
+        <div class="brand-icon">
+          <i data-lucide="message-square-code"></i>
+        </div>
+        <span class="brand-text">SMSOS v2</span>
+      </div>
+      <h1>Create Owner Account</h1>
+      <p>Register to manage your shop with AI</p>
+
+      <form id="signup-form">
+        <div class="form-group">
+          <label for="signup-name">Your Full Name</label>
+          <input type="text" id="signup-name" class="form-control" placeholder="Anand Kumar" required>
+        </div>
+        <div class="form-group">
+          <label for="signup-email">Email Address</label>
+          <input type="email" id="signup-email" class="form-control" placeholder="anand@example.com" required>
+        </div>
+        <div class="form-group">
+          <label for="signup-password">Password</label>
+          <input type="password" id="signup-password" class="form-control" placeholder="••••••••" required>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">
+          <i data-lucide="user-plus"></i> Create Owner Account
+        </button>
+      </form>
+      <div style="text-align: center; margin-top: 1rem; font-size: 0.875rem; color: var(--text-muted);">
+        Already have an account? <a href="#" onclick="showAuthCard('login'); return false;" style="color: var(--primary); text-decoration: underline;">Sign In</a>
+      </div>
+    </div>
+
+    <!-- Onboarding View -->
+    <div class="glass-panel auth-card" id="onboarding-card" style="display: none;">
+      <div class="brand">
+        <div class="brand-icon">
+          <i data-lucide="building"></i>
+        </div>
+        <span class="brand-text">Business Onboarding</span>
+      </div>
+      <h1>Shop Profile Setup</h1>
+      <p>Tell us a few details about your business</p>
+
+      <form id="onboarding-form">
+        <div class="form-group">
+          <label for="onboard-biz-name">Business Name</label>
+          <input type="text" id="onboard-biz-name" class="form-control" placeholder="e.g. Anand South Indian Cafe" required>
+        </div>
+        <div class="form-group">
+          <label for="onboard-phone">Shop WhatsApp / Phone Number</label>
+          <input type="text" id="onboard-phone" class="form-control" placeholder="+919876543210" required>
+        </div>
+        <div class="form-group">
+          <label for="onboard-location">Shop Address / Location</label>
+          <input type="text" id="onboard-location" class="form-control" placeholder="e.g. T. Nagar, Chennai" required>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">
+          <i data-lucide="check-circle"></i> Save & Open Dashboard
         </button>
       </form>
     </div>
@@ -109,8 +176,26 @@
           <h1 id="page-title">Orders Dashboard</h1>
           <p id="page-subtitle">Manage customer orders and status updates</p>
         </div>
-        <div class="header-actions" id="header-actions">
-          <!-- Dynamic Action Buttons -->
+        <div style="display: flex; align-items: center; gap: 1rem;">
+          <div class="header-actions" id="header-actions">
+            <!-- Dynamic Action Buttons -->
+          </div>
+          <!-- Profile Dropdown in Top Right -->
+          <div class="profile-dropdown" style="position: relative;">
+            <button id="profile-menu-btn" class="btn btn-secondary" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.8rem;" onclick="toggleProfileDropdown()">
+              <i data-lucide="user"></i>
+              <span id="profile-user-name">Owner</span>
+              <i data-lucide="chevron-down"></i>
+            </button>
+            <div id="profile-dropdown-menu" class="glass-panel" style="display: none; position: absolute; right: 0; top: 115%; width: 200px; padding: 0.5rem; z-index: 100; flex-direction: column; gap: 0.25rem;">
+              <button class="btn" style="width: 100%; text-align: left; justify-content: flex-start; background: transparent; color: var(--text-main); font-size: 0.875rem;" onclick="openProfileModal()">
+                <i data-lucide="user-check"></i> Edit Profile
+              </button>
+              <button class="btn" style="width: 100%; text-align: left; justify-content: flex-start; background: transparent; color: var(--accent-rose); font-size: 0.875rem;" onclick="logout()">
+                <i data-lucide="log-out"></i> Sign Out
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 

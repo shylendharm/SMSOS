@@ -75,3 +75,18 @@ async def create_customer(
         notes=req.notes,
     )
     return format_customer_response(cust)
+
+
+@router.delete("/customers/{customer_id}")
+async def delete_customer(
+    customer_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    repo = CustomerRepository(db)
+    cust = await repo.get(customer_id)
+    if not cust or cust.business_id != current_user.business_id:
+        from app.core.exceptions import NotFoundError
+        raise NotFoundError(f"Customer with id {customer_id} not found")
+    await repo.delete(customer_id)
+    return {"status": "success", "message": "Customer deleted successfully"}

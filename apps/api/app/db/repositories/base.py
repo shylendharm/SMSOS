@@ -24,3 +24,11 @@ class BaseRepository(Generic[ModelType]):
     async def list(self, offset: int = 0, limit: int = 100) -> list[ModelType]:
         result = await self.db.execute(select(self.model).offset(offset).limit(limit))
         return list(result.scalars().all())
+
+    async def delete(self, id: Any) -> bool:
+        obj = await self.get(id)
+        if obj:
+            await self.db.delete(obj)
+            await self.db.commit()
+            return True
+        return False
