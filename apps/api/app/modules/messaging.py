@@ -212,6 +212,27 @@ async def process_inbound_sms_pipeline(
     # 9. Execute domain actions based on intent
     response_text = ai_result.reply_text
 
+    # Pre-check: Cancel existing draft if customer wants a fresh/new order
+    body_lower = body.strip().lower()
+    new_order_phrases = ["new order", "fresh order", "start over", "start fresh", "start new",
+                         "cancel order", "cancel that", "nah start again", "different order",
+                         "forget that", "scrap that"]
+    wants_new_order = any(phrase in body_lower for phrase in new_order_phrases)
+    if wants_new_order:
+        cancel_query = await db.execute(
+            select(Order)
+            .where(
+                Order.customer_id == customer.id,
+                Order.business_id == business.id,
+                Order.status.in_(["draft", "pending", "pending_confirmation"])
+            )
+            .order_by(Order.created_at.desc())
+            .limit(1)
+        )
+        old_draft = cancel_query.scalars().first()
+        if old_draft:
+            old_draft.status = "cancelled"
+
     if ai_result.intent == "PLACE_ORDER" or ai_result.is_order_confirmed:
         # Fetch existing draft / pending_confirmation order for customer
         recent_draft_query = await db.execute(
