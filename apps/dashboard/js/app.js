@@ -617,26 +617,81 @@ function openCreateCustomerModal() {
 }
 
 // ----------------------------------------------------
-// RESERVATIONS VIEW (PHASE 5)
+// RESERVATIONS VIEW (PHASE 5 — Smart Conflict-Free System)
 // ----------------------------------------------------
+let reservationViewMode = 'list'; // 'list' | 'grid' | 'timeline'
+let reservationDateFilter = new Date().toISOString().slice(0, 10);
+
 async function renderReservationsView(container) {
-  const reservations = await api('/reservations');
-  const settings = await api('/business/settings').catch(() => ({ table_count: 10 }));
+  const reservations = await api(`/reservations?date=${reservationDateFilter}`);
+  const settings = await api('/business/settings').catch(() => ({ table_count: 10, reservation_slot_duration: 90, opening_time: '10:00', closing_time: '22:00' }));
   state.reservations = reservations;
 
+  let availabilityData = null;
+  try {
+    availabilityData = await api(`/reservations/availability?date=${reservationDateFilter}`);
+  } catch (e) {}
+
   container.innerHTML = `
-    <div class="glass-panel" style="padding: 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
-      <div>
-        <h4 style="margin: 0 0 0.25rem 0; font-size: 1.1rem; color: var(--text-main);">Shop Table Capacity Settings</h4>
-        <p style="margin: 0; font-size: 0.875rem; color: var(--text-muted);">Set total available dining tables in your shop for AI reservation tracking</p>
-      </div>
-      <div style="display: flex; align-items: center; gap: 0.75rem;">
-        <label style="font-size: 0.875rem; font-weight: 500; color: var(--text-main);">Total Tables:</label>
-        <input id="shop-table-count" type="number" min="1" max="500" class="form-control" style="width: 100px; text-align: center;" value="${settings.table_count || 10}">
-        <button class="btn btn-primary" style="padding: 0.4rem 0.8rem; font-size: 0.875rem;" onclick="updateShopTableCapacity()"><i data-lucide="save"></i> Save Capacity</button>
+    <!-- Settings Panel -->
+    <div class="glass-panel" style="padding: 1.25rem; margin-bottom: 1.5rem;">
+      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+        <div>
+          <h4 style="margin: 0 0 0.25rem 0; font-size: 1.1rem; color: var(--text-main);">Shop Table & Reservation Settings</h4>
+          <p style="margin: 0; font-size: 0.875rem; color: var(--text-muted);">Configure capacity, slot duration, and operating hours</p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 0.35rem;">
+            <label style="font-size: 0.8rem; font-weight: 500; color: var(--text-main);">Tables:</label>
+            <input id="shop-table-count" type="number" min="1" max="500" class="form-control" style="width: 70px; text-align: center;" value="${settings.table_count || 10}">
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.35rem;">
+            <label style="font-size: 0.8rem; font-weight: 500; color: var(--text-main);">Slot (min):</label>
+            <input id="shop-slot-duration" type="number" min="15" max="300" class="form-control" style="width: 70px; text-align: center;" value="${settings.reservation_slot_duration || 90}">
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.35rem;">
+            <label style="font-size: 0.8rem; font-weight: 500; color: var(--text-main);">Open:</label>
+            <input id="shop-opening-time" type="time" class="form-control" style="width: 100px;" value="${settings.opening_time || '10:00'}">
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.35rem;">
+            <label style="font-size: 0.8rem; font-weight: 500; color: var(--text-main);">Close:</label>
+            <input id="shop-closing-time" type="time" class="form-control" style="width: 100px;" value="${settings.closing_time || '22:00'}">
+          </div>
+          <button class="btn btn-primary" style="padding: 0.4rem 0.8rem; font-size: 0.875rem;" onclick="updateShopReservationSettings()"><i data-lucide="save"></i> Save</button>
+        </div>
       </div>
     </div>
 
+    <!-- View Controls -->
+    <div class="glass-panel" style="padding: 1rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <label style="font-size: 0.875rem; font-weight: 500; color: var(--text-main);">Date:</label>
+        <input id="res-date-filter" type="date" class="form-control" style="width: 165px;" value="${reservationDateFilter}" onchange="reservationDateFilter=this.value; renderView('reservations');">
+      </div>
+      <div style="display: flex; gap: 0.5rem;">
+        <button class="btn ${reservationViewMode === 'list' ? 'btn-primary' : ''}" style="padding: 0.35rem 0.7rem; font-size: 0.8rem;" onclick="reservationViewMode='list'; renderView('reservations');"><i data-lucide="list"></i> List</button>
+        <button class="btn ${reservationViewMode === 'grid' ? 'btn-primary' : ''}" style="padding: 0.35rem 0.7rem; font-size: 0.8rem;" onclick="reservationViewMode='grid'; renderView('reservations');"><i data-lucide="grid-3x3"></i> Table Grid</button>
+        <button class="btn ${reservationViewMode === 'timeline' ? 'btn-primary' : ''}" style="padding: 0.35rem 0.7rem; font-size: 0.8rem;" onclick="reservationViewMode='timeline'; renderView('reservations');"><i data-lucide="bar-chart-3"></i> Timeline</button>
+        <button class="btn btn-primary" style="padding: 0.35rem 0.7rem; font-size: 0.8rem;" onclick="openCreateReservationModal()"><i data-lucide="plus"></i> New Booking</button>
+      </div>
+    </div>
+
+    <!-- View Content -->
+    <div id="reservation-view-content"></div>
+  `;
+
+  const viewContent = document.getElementById('reservation-view-content');
+  if (reservationViewMode === 'grid') {
+    renderTableGridView(viewContent, availabilityData, settings);
+  } else if (reservationViewMode === 'timeline') {
+    renderTimelineView(viewContent, availabilityData, settings);
+  } else {
+    renderReservationListView(viewContent, reservations);
+  }
+}
+
+function renderReservationListView(container, reservations) {
+  container.innerHTML = `
     <div class="glass-panel" style="padding: 1.25rem;">
       <div class="table-container">
         <table class="data-table">
@@ -644,20 +699,22 @@ async function renderReservationsView(container) {
             <tr>
               <th>Customer</th>
               <th>Party Size</th>
-              <th>Table/Slot</th>
+              <th>Table</th>
               <th>Reserved Date/Time</th>
+              <th>Duration</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            ${reservations.length === 0 ? '<tr><td colspan="6" style="text-align:center; padding:2rem;">No reservations found</td></tr>' : ''}
+            ${reservations.length === 0 ? '<tr><td colspan="7" style="text-align:center; padding:2rem;">No reservations found</td></tr>' : ''}
             ${reservations.map((r) => `
               <tr>
                 <td><strong>${r.customer_name || 'Guest'}</strong></td>
                 <td>${r.party_size} People</td>
-                <td>${r.table_or_slot || 'General'}</td>
+                <td><span class="badge badge-confirmed">${r.table_or_slot || 'Unassigned'}</span></td>
                 <td>${new Date(r.reserved_at).toLocaleString()}</td>
+                <td>${r.duration_minutes} min</td>
                 <td><span class="badge badge-${r.status}">${r.status}</span></td>
                 <td>
                   <button class="btn-icon" style="color:var(--accent-rose);" title="Delete Reservation" onclick="deleteReservation('${r.id}')"><i data-lucide="trash-2"></i></button>
@@ -669,6 +726,102 @@ async function renderReservationsView(container) {
       </div>
     </div>
   `;
+}
+
+function renderTableGridView(container, availabilityData, settings) {
+  if (!availabilityData) {
+    container.innerHTML = '<div class="glass-panel" style="padding: 2rem; text-align: center; color: var(--text-muted);">Loading availability data...</div>';
+    return;
+  }
+
+  const grid = availabilityData.table_grid || [];
+  container.innerHTML = `
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 1rem;">
+      ${grid.map(t => {
+        const isReserved = t.status === 'reserved';
+        const borderColor = isReserved ? 'rgba(239, 68, 68, 0.4)' : 'rgba(16, 185, 129, 0.4)';
+        const bgColor = isReserved ? 'rgba(239, 68, 68, 0.05)' : 'rgba(16, 185, 129, 0.05)';
+        const statusLabel = isReserved ? 'Occupied' : 'Available';
+
+        return `
+          <div class="glass-panel" style="padding: 1.25rem; border: 1px solid ${borderColor}; background: ${bgColor}; transition: all 0.2s ease;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+              <h4 style="margin: 0; font-size: 1.1rem; font-weight: 600; color: var(--text-main);">${t.table_name}</h4>
+              <span class="badge badge-${isReserved ? 'cancelled' : 'confirmed'}">${statusLabel}</span>
+            </div>
+            ${t.bookings.length > 0 ? `
+              <div style="margin-top: 0.75rem; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 0.6rem;">
+                ${t.bookings.map(b => `
+                  <div style="display: flex; align-items: center; justify-content: space-between; font-size: 0.825rem; padding: 0.4rem 0.6rem; background: rgba(0,0,0,0.2); border-radius: 6px; margin-bottom: 0.4rem;">
+                    <div>
+                      <strong style="color: var(--text-main); display: block;">${b.customer}</strong>
+                      <span style="font-size: 0.75rem; color: var(--text-subtle);">${b.party_size} guests · ${b.duration}m</span>
+                    </div>
+                    <span style="font-weight: 600; color: var(--accent-indigo); font-size: 0.8rem;">${b.time}</span>
+                  </div>
+                `).join('')}
+              </div>
+            ` : `
+              <p style="font-size: 0.8rem; color: var(--text-subtle); margin: 0.5rem 0 0;">Free all day</p>
+            `}
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderTimelineView(container, availabilityData, settings) {
+  if (!availabilityData) {
+    container.innerHTML = '<div class="glass-panel" style="padding: 2rem; text-align: center; color: var(--text-muted);">Loading timeline data...</div>';
+    return;
+  }
+
+  const matrix = availabilityData.hourly_matrix || [];
+  const totalTables = availabilityData.total_tables || 10;
+
+  container.innerHTML = `
+    <div class="glass-panel" style="padding: 1.25rem;">
+      <h4 style="margin: 0 0 1rem; font-size: 1.1rem; color: var(--text-main);">
+        Hourly Table Occupancy — ${availabilityData.date}
+      </h4>
+      <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+        ${matrix.map(slot => {
+          const pct = totalTables > 0 ? ((slot.occupied / totalTables) * 100).toFixed(0) : 0;
+          const isFull = slot.available === 0;
+          const barColor = isFull
+            ? 'var(--accent-rose)'
+            : pct > 60 ? 'var(--accent-amber)' : 'var(--accent-emerald)';
+
+          return `
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <div style="width: 80px; font-size: 0.85rem; font-weight: 500; color: var(--text-main); flex-shrink: 0;">${slot.hour}</div>
+              <div style="flex: 1; background: var(--card-bg); border-radius: 6px; height: 28px; overflow: hidden; position: relative; border: 1px solid var(--border);">
+                <div style="height: 100%; width: ${pct}%; background: ${barColor}; border-radius: 6px; transition: width 0.5s ease;"></div>
+                <span style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 0.75rem; font-weight: 600; color: var(--text-main);">
+                  ${slot.occupied}/${totalTables} ${isFull ? '🔴 FULL' : ''}
+                </span>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+async function updateShopReservationSettings() {
+  const table_count = parseInt(document.getElementById('shop-table-count').value) || 10;
+  const reservation_slot_duration = parseInt(document.getElementById('shop-slot-duration').value) || 90;
+  const opening_time = document.getElementById('shop-opening-time').value || '10:00';
+  const closing_time = document.getElementById('shop-closing-time').value || '22:00';
+
+  await api('/business/settings', {
+    method: 'PUT',
+    body: JSON.stringify({ table_count, reservation_slot_duration, opening_time, closing_time }),
+  });
+  showToast('Reservation settings saved!');
+  renderView('reservations');
 }
 
 function openCreateReservationModal() {
@@ -695,12 +848,16 @@ function openCreateReservationModal() {
     const party_size = parseInt(document.getElementById('modal-res-party').value);
     const reserved_at = new Date(document.getElementById('modal-res-time').value).toISOString();
 
-    await api('/reservations', {
-      method: 'POST',
-      body: JSON.stringify({ customer_name, customer_phone, party_size, reserved_at }),
-    });
-    showToast('Reservation created!');
-    renderView('reservations');
+    try {
+      await api('/reservations', {
+        method: 'POST',
+        body: JSON.stringify({ customer_name, customer_phone, party_size, reserved_at }),
+      });
+      showToast('Reservation created! Table auto-assigned.');
+      renderView('reservations');
+    } catch (err) {
+      showToast(err.message || 'Failed to create reservation — slot may be full', 'error');
+    }
   });
 }
 

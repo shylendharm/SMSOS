@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import String, Boolean, JSON, ForeignKey
+from sqlalchemy import String, Boolean, JSON, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base, UUIDPKMixin, TimestampMixin
 
@@ -24,6 +24,9 @@ class BusinessSettings(Base, UUIDPKMixin, TimestampMixin):
     business_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), unique=True, nullable=False)
     operating_hours: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}", nullable=False)
     table_count: Mapped[int | None] = mapped_column(nullable=True)
+    reservation_slot_duration: Mapped[int] = mapped_column(Integer, default=90, server_default="90", nullable=False)
+    opening_time: Mapped[str] = mapped_column(String(5), default="10:00", server_default="10:00", nullable=False)
+    closing_time: Mapped[str] = mapped_column(String(5), default="22:00", server_default="22:00", nullable=False)
     appointment_slots: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}", nullable=False)
     sms_aliases: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}", nullable=False)
     notification_preferences: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}", nullable=False)

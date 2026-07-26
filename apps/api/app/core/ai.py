@@ -73,6 +73,7 @@ class GeminiAIService:
         order_context: Optional[List[Dict[str, Any]]] = None,
         table_count: int = 10,
         business_location: Optional[str] = None,
+        reservation_availability: Optional[str] = None,
     ) -> IntentResult:
         """
         Processes customer message, extracts intent/entities, and drafts reply text in the customer's language.
@@ -85,9 +86,20 @@ class GeminiAIService:
         history_str = json.dumps(conversation_history or [], ensure_ascii=False)
         order_str = json.dumps(order_context or [], ensure_ascii=False)
 
+        from datetime import datetime as dt_cls
+        now_utc = dt_cls.now()
+        current_date_str = now_utc.strftime("%Y-%m-%d (%A)")
+        current_time_str = now_utc.strftime("%H:%M")
+
         system_instruction = f"""
 You are an AI Assistant for '{business_name}'. You handle incoming customer messages on WhatsApp/SMS.
 You support messages in English, Tamil (தமிழ்), and Tanglish (Tamil written in Latin script, e.g. 'vanakkam', 'ethana mani ki open', '1kg rice irukka').
+
+Current System Date & Time Context:
+Today is: {current_date_str}
+Current Time: {current_time_str}
+CRITICAL DATE RULE: You MUST convert all relative date references ('today', 'tomorrow', 'tmrw', 'next friday', etc.) into an EXACT ISO format 'YYYY-MM-DD' for `reservation_date` based on Today's date above ({now_utc.strftime("%Y-%m-%d")}).
+CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noon', etc.) into 24-hour 'HH:MM' format for `reservation_time` (e.g. '19:00').
 
 Available Business Catalog:
 {catalog_str}
@@ -97,6 +109,10 @@ The shop is located at: {business_location or "T. Nagar, Chennai"}
 
 Shop Capacity:
 The shop has a total of {table_count} dining tables available for reservations.
+Each reservation slot is 90 minutes long.
+
+Current Table Availability (Live):
+{reservation_availability or "No availability data loaded yet."}
 
 Recent Conversation History:
 {history_str}
@@ -118,7 +134,7 @@ Your task:
       - Identify if the customer has specified: (1) reservation date, (2) reservation time, (3) party size (number of members/guests), and (4) customer name (booking name).
       - Set `is_reservation_complete = True` ONLY if all four details (date, time, party size, and customer name) are clearly specified by the customer in their message or the recent conversation history.
       - If ANY details are missing (e.g., they said "Book 2 tables" but gave no time or name, or "Book a table today at 4:00" but gave no party size or name), set `is_reservation_complete = False` and use `reply_text` to politely ask them to specify the missing details (date, time, number of members, or booking name) in their input language (English, Tamil, or Tanglish).
-      - Once all details are complete, set `is_reservation_complete = True` and use `reply_text` to confirm the booking politely and mention that the shop has {table_count} tables available.
+      - When all 4 details are present, set `is_reservation_complete = True`. (Do NOT check or guess table availability — the backend database will validate availability and assign tables).
     - If ordering, summarize items and total price if known. Keep responses brief for SMS/WhatsApp.
 """
 

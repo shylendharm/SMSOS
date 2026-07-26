@@ -171,6 +171,21 @@ async def process_inbound_sms_pipeline(
     )
     b_settings = settings_res.scalars().first()
     table_count = b_settings.table_count if (b_settings and b_settings.table_count is not None) else 10
+    slot_duration = b_settings.reservation_slot_duration if (b_settings and b_settings.reservation_slot_duration) else 90
+
+    # Build live reservation availability context for today
+    from datetime import datetime as dt_cls, timezone as tz_cls
+    from app.modules.reservation_service import get_day_occupancy_matrix
+    today_dt = dt_cls.now(tz_cls.utc)
+    try:
+        occupancy = await get_day_occupancy_matrix(db, business.id, today_dt, slot_duration)
+        avail_lines = []
+        for slot in occupancy:
+            status = "FULL" if slot["available"] == 0 else f"{slot['available']}/{slot['total']} tables free"
+            avail_lines.append(f"  {slot['hour']}: {status}")
+        reservation_availability = f"Today's table occupancy (slot duration: {slot_duration} min):\n" + "\n".join(avail_lines)
+    except Exception:
+        reservation_availability = None
 
     # 7. Execute AI Processing with Gemini
     ai_result = await gemini_service.process_customer_message(
@@ -181,6 +196,7 @@ async def process_inbound_sms_pipeline(
         order_context=order_context,
         table_count=table_count,
         business_location=business.location,
+        reservation_availability=reservation_availability,
     )
 
     # 8. Record Intent Prediction
@@ -245,49 +261,99 @@ async def process_inbound_sms_pipeline(
     elif ai_result.intent == "RESERVATION":
         if ai_result.is_reservation_complete:
             from datetime import datetime, timezone, timedelta
+            from app.modules.reservation_service import allocate_table_number, find_alternative_slots
+            # --- Robust Date & Time Parser ---
+            from datetime import datetime as dt_cls, timezone as tz_cls, timedelta as td_cls
+            now_local = dt_cls.now()
+
             res_date_str = ai_result.entities.get("reservation_date")
             res_time_str = ai_result.entities.get("reservation_time")
-            parsed_dt = None
-            
-            try:
-                import dateutil.parser
-                if res_date_str and res_time_str:
-                    parsed_dt = dateutil.parser.parse(f"{res_date_str} {res_time_str}", default=datetime.now(timezone.utc), fuzzy=True)
-                elif res_date_str:
-                    parsed_dt = dateutil.parser.parse(res_date_str, default=datetime.now(timezone.utc), fuzzy=True)
-                elif res_time_str:
-                    parsed_dt = dateutil.parser.parse(res_time_str, default=datetime.now(timezone.utc), fuzzy=True)
-            except Exception:
-                pass
-                
-            if not parsed_dt:
+
+            target_date = now_local.date()
+            if res_date_str:
+                clean_d = res_date_str.strip().lower()
+                if clean_d in ["today", "today's"]:
+                    target_date = now_local.date()
+                elif clean_d in ["tomorrow", "tmrw", "tomorrow's"]:
+                    target_date = now_local.date() + td_cls(days=1)
+                else:
+                    try:
+                        target_date = dt_cls.fromisoformat(clean_d[:10]).date()
+                    except Exception:
+                        try:
+                            import dateutil.parser
+                            target_date = dateutil.parser.parse(clean_d, fuzzy=True).date()
+                        except Exception:
+                            pass
+
+            target_hour = 19
+            target_min = 0
+            if res_time_str:
+                clean_t = res_time_str.strip().lower()
                 try:
-                    if res_date_str and len(res_date_str) == 10:
-                        if res_time_str:
-                            parsed_dt = datetime.fromisoformat(f"{res_date_str}T{res_time_str}")
-                        else:
-                            parsed_dt = datetime.fromisoformat(res_date_str)
+                    import dateutil.parser
+                    t_parsed = dateutil.parser.parse(clean_t, fuzzy=True)
+                    target_hour = t_parsed.hour
+                    target_min = t_parsed.minute
                 except Exception:
-                    pass
-                    
-            if not parsed_dt:
-                parsed_dt = datetime.now(timezone.utc) + timedelta(hours=2)
-                
-            if parsed_dt.tzinfo is None:
-                parsed_dt = parsed_dt.replace(tzinfo=timezone.utc)
-                
-            cust_name = ai_result.entities.get("customer_name")
-            reservation = Reservation(
-                business_id=business.id,
-                customer_id=customer.id,
-                customer_name=cust_name or customer.name,
-                reserved_at=parsed_dt,
-                party_size=int(ai_result.entities.get("party_size", 2)),
-                status="confirmed",
-                notes=f"AI parsed reservation from: '{body}'",
+                    try:
+                        parts = clean_t.replace("pm", "").replace("am", "").strip().split(":")
+                        target_hour = int(parts[0])
+                        if "pm" in clean_t and target_hour < 12:
+                            target_hour += 12
+                        target_min = int(parts[1]) if len(parts) > 1 else 0
+                    except Exception:
+                        pass
+
+            # Create slot start datetime in UTC (normalized to 00 seconds for clean slots)
+            parsed_dt = dt_cls(
+                target_date.year, target_date.month, target_date.day,
+                target_hour, target_min, 0, tzinfo=tz_cls.utc
             )
-            db.add(reservation)
-            conv_state.state = "RESERVATION_CONFIRMED"
+
+            # --- Conflict Detection & Table Allocation ---
+            party_sz = int(ai_result.entities.get("party_size", 2))
+            allocated_table = await allocate_table_number(db, business.id, parsed_dt, slot_duration, party_size=party_sz)
+
+            if allocated_table is None:
+                # All tables are full at the requested time — find alternatives
+                alternatives = await find_alternative_slots(db, business.id, parsed_dt, slot_duration)
+                alt_str = ", ".join(alternatives) if alternatives else "no nearby slots available"
+                response_text = (
+                    f"Sorry, all {table_count} tables are fully booked for the requested time. "
+                    f"Available alternative slots: {alt_str}. "
+                    f"Would you like to book one of these instead?"
+                )
+                conv_state.state = "RESERVATION_SLOT_FULL"
+            else:
+                cust_name = ai_result.entities.get("customer_name")
+                reservation = Reservation(
+                    business_id=business.id,
+                    customer_id=customer.id,
+                    customer_name=cust_name or customer.name,
+                    reserved_at=parsed_dt,
+                    duration_minutes=slot_duration,
+                    party_size=party_sz,
+                    table_or_slot=allocated_table,
+                    status="confirmed",
+                    notes=f"AI parsed reservation from: '{body}'",
+                )
+                db.add(reservation)
+                # Override AI reply with assigned table details
+                try:
+                    time_display = parsed_dt.strftime("%I:%M %p").lstrip("0")
+                except Exception:
+                    time_display = parsed_dt.strftime("%H:%M")
+
+                response_text = (
+                    f"Your reservation is confirmed! "
+                    f"Name: {cust_name or customer.name}, "
+                    f"Party: {party_sz} guests, "
+                    f"Assigned: {allocated_table}, "
+                    f"Time: {time_display}. "
+                    f"We look forward to welcoming you!"
+                )
+                conv_state.state = "RESERVATION_CONFIRMED"
         else:
             conv_state.state = "RESERVATION_INCOMPLETE"
 

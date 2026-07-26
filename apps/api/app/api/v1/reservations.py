@@ -62,6 +62,71 @@ def format_reservation_response(res: Reservation) -> dict:
     }
 
 
+@router.get("/reservations/availability")
+async def get_availability(
+    date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from datetime import datetime as dt_cls, timezone as tz_cls
+    from app.modules.reservation_service import get_day_occupancy_matrix, get_business_settings, check_table_availability
+
+    settings = await get_business_settings(db, current_user.business_id)
+    total_tables = (settings.table_count if settings and settings.table_count else 10)
+    slot_duration = (settings.reservation_slot_duration if settings else 90) or 90
+    opening_time = (settings.opening_time if settings else "10:00") or "10:00"
+    closing_time = (settings.closing_time if settings else "22:00") or "22:00"
+
+    if date:
+        try:
+            target_date = dt_cls.fromisoformat(date).replace(tzinfo=tz_cls.utc)
+        except ValueError:
+            target_date = dt_cls.now(tz_cls.utc)
+    else:
+        target_date = dt_cls.now(tz_cls.utc)
+
+    matrix = await get_day_occupancy_matrix(db, current_user.business_id, target_date, slot_duration)
+
+    # Build per-table status for the Visual Table Grid (deduplicated per reservation)
+    repo = ReservationRepository(db)
+    day_reservations = await repo.list_by_business(current_user.business_id, date=target_date)
+
+    all_table_names = [f"Table {i}" for i in range(1, total_tables + 1)]
+    table_grid = []
+    for tname in all_table_names:
+        bookings = []
+        for r in day_reservations:
+            if r.status in ["confirmed", "seated"] and r.table_or_slot:
+                assigned_tables = [t.strip() for t in r.table_or_slot.split(",")]
+                if tname in assigned_tables:
+                    try:
+                        time_str = r.reserved_at.strftime("%I:%M %p").lstrip("0")
+                    except Exception:
+                        time_str = r.reserved_at.strftime("%H:%M")
+                    bookings.append({
+                        "id": str(r.id),
+                        "customer": r.customer_name or "Guest",
+                        "party_size": r.party_size,
+                        "time": time_str,
+                        "duration": r.duration_minutes,
+                    })
+        table_grid.append({
+            "table_name": tname,
+            "status": "reserved" if bookings else "available",
+            "bookings": bookings,
+        })
+
+    return {
+        "date": target_date.strftime("%Y-%m-%d"),
+        "total_tables": total_tables,
+        "slot_duration": slot_duration,
+        "opening_time": opening_time,
+        "closing_time": closing_time,
+        "hourly_matrix": matrix,
+        "table_grid": table_grid,
+    }
+
+
 @router.get("/reservations", response_model=List[ReservationResponse])
 async def list_reservations(
     date: Optional[datetime] = Query(None),
@@ -81,16 +146,30 @@ async def create_reservation(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    repo = ReservationRepository(db)
+    from app.modules.reservation_service import allocate_table_number, get_business_settings
 
-    if req.table_or_slot:
+    settings = await get_business_settings(db, current_user.business_id)
+    slot_duration = (settings.reservation_slot_duration if settings else 90) or req.duration_minutes
+
+    # Auto-allocate table if not manually specified
+    table_name = req.table_or_slot
+    if not table_name:
+        table_name = await allocate_table_number(db, current_user.business_id, req.reserved_at, slot_duration, party_size=req.party_size)
+        if table_name is None:
+            raise ConflictError(
+                f"Not enough free tables for a party of {req.party_size} at this time slot. "
+                f"Please choose a different time or reduce party size."
+            )
+    else:
+        # Validate manual table assignment against conflicts
+        repo = ReservationRepository(db)
         conflict = await repo.check_conflict(
             business_id=current_user.business_id,
-            table_or_slot=req.table_or_slot,
+            table_or_slot=table_name,
             reserved_at=req.reserved_at,
         )
         if conflict:
-            raise ConflictError(f"Table/slot '{req.table_or_slot}' is already reserved for this time slot")
+            raise ConflictError(f"Table '{table_name}' is already reserved for this time slot")
 
     customer_id = None
     if req.customer_phone:
@@ -109,8 +188,8 @@ async def create_reservation(
         customer_id=customer_id,
         customer_name=req.customer_name,
         reserved_at=req.reserved_at,
-        duration_minutes=req.duration_minutes,
-        table_or_slot=req.table_or_slot,
+        duration_minutes=slot_duration,
+        table_or_slot=table_name,
         party_size=req.party_size,
         status="confirmed",
         notes=req.notes,

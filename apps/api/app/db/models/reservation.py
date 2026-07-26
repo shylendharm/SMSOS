@@ -12,7 +12,7 @@ class Reservation(Base, UUIDPKMixin, TimestampMixin):
     customer_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
     customer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     reserved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    duration_minutes: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
+    duration_minutes: Mapped[int] = mapped_column(Integer, default=90, nullable=False)
     table_or_slot: Mapped[str | None] = mapped_column(String(50), nullable=True)
     party_size: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="confirmed", nullable=False)
