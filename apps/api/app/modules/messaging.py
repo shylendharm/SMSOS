@@ -278,34 +278,57 @@ async def process_inbound_sms_pipeline(
 
             if items_extracted:
                 from sqlalchemy import delete
-                # Clear old draft items so new order replaces previous draft items
-                await db.execute(delete(OrderItem).where(OrderItem.order_id == order.id))
-                await db.flush()
-                order.items = []
+                # Fetch existing items for this order
+                res_existing = await db.execute(select(OrderItem).where(OrderItem.order_id == order.id))
+                existing_items_list = list(res_existing.scalars().all())
 
-                total = Decimal("0.00")
+                body_lower = body.lower()
+                is_replacement = any(w in body_lower for w in ["start over", "cancel order", "replace order", "clear order", "instead of", "change order"])
+
+                if is_replacement:
+                    await db.execute(delete(OrderItem).where(OrderItem.order_id == order.id))
+                    await db.flush()
+                    existing_items_map = {}
+                else:
+                    existing_items_map = {it.item_name.lower(): it for it in existing_items_list}
+
                 for itm in items_extracted:
                     item_name = itm.get("item_name", "Item") if isinstance(itm, dict) else str(itm)
                     qty = int(itm.get("quantity", 1)) if isinstance(itm, dict) else 1
 
                     matched_catalog = None
                     for c_item in catalog_items:
-                        if c_item.name.lower() in item_name.lower():
+                        c_name = c_item.name.lower()
+                        i_name = item_name.lower()
+                        if c_name in i_name or i_name in c_name:
                             matched_catalog = c_item
                             break
 
                     price = matched_catalog.price if matched_catalog else Decimal("10.00")
-                    line_total = price * qty
-                    total += line_total
+                    clean_name = matched_catalog.name if matched_catalog else item_name
 
-                    order_item = OrderItem(
-                        order_id=order.id,
-                        item_name=item_name,
-                        quantity=qty,
-                        unit_price=price,
-                    )
-                    db.add(order_item)
-                    order.items.append(order_item)
+                    if clean_name.lower() in existing_items_map:
+                        existing_item = existing_items_map[clean_name.lower()]
+                        existing_item.quantity += qty
+                    else:
+                        new_item = OrderItem(
+                            order_id=order.id,
+                            item_name=clean_name,
+                            quantity=qty,
+                            unit_price=price,
+                        )
+                        db.add(new_item)
+                        existing_items_map[clean_name.lower()] = new_item
+
+                await db.flush()
+
+                res_all = await db.execute(select(OrderItem).where(OrderItem.order_id == order.id))
+                all_items = list(res_all.scalars().all())
+                order.items = all_items
+
+                total = Decimal("0.00")
+                for it in all_items:
+                    total += Decimal(str(it.unit_price)) * it.quantity
                 order.total_amount = total
 
             total_items_count = sum([it.quantity for it in order.items]) if order.items else len(items_extracted)
