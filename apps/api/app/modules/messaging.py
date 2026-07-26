@@ -234,6 +234,8 @@ async def process_inbound_sms_pipeline(
             old_draft.status = "cancelled"
 
     if ai_result.intent == "PLACE_ORDER" or ai_result.is_order_confirmed:
+        from datetime import datetime, timezone, timedelta
+        
         # Fetch existing draft / pending_confirmation order for customer
         recent_draft_query = await db.execute(
             select(Order)
@@ -247,6 +249,16 @@ async def process_inbound_sms_pipeline(
             .limit(1)
         )
         existing_draft = recent_draft_query.scalars().first()
+
+        # 1. Expire stale draft orders (> 10 minutes old)
+        if existing_draft and existing_draft.created_at:
+            now_utc = datetime.now(timezone.utc)
+            draft_time = existing_draft.created_at
+            if draft_time.tzinfo is None:
+                draft_time = draft_time.replace(tzinfo=timezone.utc)
+            if (now_utc - draft_time) > timedelta(minutes=10):
+                existing_draft.status = "cancelled"
+                existing_draft = None
 
         deliv_loc = ai_result.entities.get("delivery_location")
         items_extracted = ai_result.entities.get("items", [])
@@ -278,7 +290,17 @@ async def process_inbound_sms_pipeline(
             from app.db.repositories.order import OrderRepository
             order_repo = OrderRepository(db)
 
-            if not existing_draft or existing_draft.status == "confirmed":
+            # Check if customer explicitly wants to append vs start fresh
+            body_lower = body.lower()
+            is_addition = any(w in body_lower for w in ["add", "also", "plus", "and 1", "and 2", "extra", "include"])
+            
+            # If items extracted without addition keywords and existing draft is pending_confirmation,
+            # cancel previous draft and start fresh!
+            if items_extracted and existing_draft and not is_addition and not deliv_loc:
+                existing_draft.status = "cancelled"
+                existing_draft = None
+
+            if not existing_draft or existing_draft.status in ["confirmed", "cancelled"]:
                 next_num = await order_repo.get_next_order_number(business.id)
                 order = Order(
                     business_id=business.id,
