@@ -15,6 +15,9 @@ class Order(Base, UUIDPKMixin, TimestampMixin):
     status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False)
     notes: Mapped[str | None] = mapped_column(nullable=True)
     total_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    delivery_location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    order_type: Mapped[str] = mapped_column(String(30), default="DELIVERY", nullable=False)
+    estimated_delivery_minutes: Mapped[int | None] = mapped_column(Integer, default=30, nullable=True)
 
     business: Mapped["Business"] = relationship("Business")
     customer: Mapped["Customer"] = relationship("Customer")

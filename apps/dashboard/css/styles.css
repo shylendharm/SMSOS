@@ -373,13 +373,25 @@ table.data-table tbody tr:hover {
   text-transform: capitalize;
 }
 
-.badge-pending {
+.badge-pending, .badge-pending_confirmation {
   background: rgba(245, 158, 11, 0.15);
   color: var(--accent-amber);
   border: 1px solid rgba(245, 158, 11, 0.3);
 }
 
-.badge-ready, .badge-completed, .badge-confirmed, .badge-active {
+.badge-in_preparation {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--primary);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.badge-out_for_delivery {
+  background: rgba(14, 165, 233, 0.15);
+  color: #0ea5e9;
+  border: 1px solid rgba(14, 165, 233, 0.3);
+}
+
+.badge-ready, .badge-completed, .badge-confirmed, .badge-delivered, .badge-active {
   background: rgba(16, 185, 129, 0.15);
   color: var(--accent-emerald);
   border: 1px solid rgba(16, 185, 129, 0.3);

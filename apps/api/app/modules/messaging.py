@@ -212,51 +212,132 @@ async def process_inbound_sms_pipeline(
     # 9. Execute domain actions based on intent
     response_text = ai_result.reply_text
 
-    if ai_result.intent == "PLACE_ORDER":
-        # Create an Order draft
-        from app.db.repositories.order import OrderRepository
-        order_repo = OrderRepository(db)
-        next_num = await order_repo.get_next_order_number(business.id)
-
-        order = Order(
-            business_id=business.id,
-            customer_id=customer.id,
-            order_number=next_num,
-            status="pending",
-            total_amount=Decimal("0.00"),
-            notes=f"AI parsed order from: '{body}'",
+    if ai_result.intent == "PLACE_ORDER" or ai_result.is_order_confirmed:
+        # Fetch existing draft / pending_confirmation order for customer
+        recent_draft_query = await db.execute(
+            select(Order)
+            .where(
+                Order.customer_id == customer.id,
+                Order.business_id == business.id,
+                Order.status.in_(["draft", "pending", "pending_confirmation"])
+            )
+            .options(selectinload(Order.items))
+            .order_by(Order.created_at.desc())
+            .limit(1)
         )
-        db.add(order)
-        await db.flush()
+        existing_draft = recent_draft_query.scalars().first()
 
-        total = Decimal("0.00")
+        deliv_loc = ai_result.entities.get("delivery_location")
         items_extracted = ai_result.entities.get("items", [])
-        if isinstance(items_extracted, list):
-            for itm in items_extracted:
-                item_name = itm.get("item_name", "Item") if isinstance(itm, dict) else str(itm)
-                qty = int(itm.get("quantity", 1)) if isinstance(itm, dict) else 1
 
-                # Match item in catalog
-                matched_catalog = None
-                for c_item in catalog_items:
-                    if c_item.name.lower() in item_name.lower():
-                        matched_catalog = c_item
-                        break
+        # Step A: Customer confirms order ("YES", "confirm", "ok", "aama", etc.)
+        if (ai_result.is_order_confirmed or body.strip().lower() in ["yes", "confirm", "ok", "aama", "yes proceed", "ha"]) and existing_draft:
+            existing_draft.status = "confirmed"
+            
+            # Refresh items from DB to prevent duplicate relationship caching
+            res_items = await db.execute(select(OrderItem).where(OrderItem.order_id == existing_draft.id))
+            fresh_items = list(res_items.scalars().all())
+            existing_draft.items = fresh_items
 
-                price = matched_catalog.price if matched_catalog else Decimal("10.00")
-                line_total = price * qty
-                total += line_total
+            item_summary = ", ".join([f"{it.quantity}x {it.item_name}" for it in fresh_items]) if fresh_items else "your items"
+            loc_str = existing_draft.delivery_location or "your location"
+            eta_str = existing_draft.estimated_delivery_minutes or 30
 
-                order_item = OrderItem(
-                    order_id=order.id,
-                    item_name=item_name,
-                    quantity=qty,
-                    unit_price=price,
+            response_text = (
+                f"🎉 Order #{existing_draft.order_number} Confirmed!\n"
+                f"Your order ({item_summary}) has been sent to the kitchen.\n"
+                f"📍 Delivery to: {loc_str}\n"
+                f"⏱️ Estimated Time: ~{eta_str} mins\n"
+                f"We will update you live when it's out for delivery!"
+            )
+            conv_state.state = "ORDER_CONFIRMED"
+
+        # Step B: Items or Location provided -> Create/Update Order
+        elif items_extracted or (existing_draft and deliv_loc):
+            from app.db.repositories.order import OrderRepository
+            order_repo = OrderRepository(db)
+
+            if not existing_draft or existing_draft.status == "confirmed":
+                next_num = await order_repo.get_next_order_number(business.id)
+                order = Order(
+                    business_id=business.id,
+                    customer_id=customer.id,
+                    order_number=next_num,
+                    status="pending_confirmation",
+                    total_amount=Decimal("0.00"),
+                    notes=f"AI parsed order from: '{body}'",
                 )
-                db.add(order_item)
+                db.add(order)
+                await db.flush()
+            else:
+                order = existing_draft
+                order.status = "pending_confirmation"
 
-        order.total_amount = total
-        conv_state.state = "ORDER_PENDING"
+            if deliv_loc:
+                order.delivery_location = deliv_loc
+
+            if items_extracted:
+                from sqlalchemy import delete
+                # Clear old draft items so new order replaces previous draft items
+                await db.execute(delete(OrderItem).where(OrderItem.order_id == order.id))
+                await db.flush()
+                order.items = []
+
+                total = Decimal("0.00")
+                for itm in items_extracted:
+                    item_name = itm.get("item_name", "Item") if isinstance(itm, dict) else str(itm)
+                    qty = int(itm.get("quantity", 1)) if isinstance(itm, dict) else 1
+
+                    matched_catalog = None
+                    for c_item in catalog_items:
+                        if c_item.name.lower() in item_name.lower():
+                            matched_catalog = c_item
+                            break
+
+                    price = matched_catalog.price if matched_catalog else Decimal("10.00")
+                    line_total = price * qty
+                    total += line_total
+
+                    order_item = OrderItem(
+                        order_id=order.id,
+                        item_name=item_name,
+                        quantity=qty,
+                        unit_price=price,
+                    )
+                    db.add(order_item)
+                    order.items.append(order_item)
+                order.total_amount = total
+
+            total_items_count = sum([it.quantity for it in order.items]) if order.items else len(items_extracted)
+            prep_time = 15 if total_items_count <= 3 else 20
+            travel_time = 15
+            eta_minutes = prep_time + travel_time
+            order.estimated_delivery_minutes = eta_minutes
+
+            if not order.delivery_location:
+                response_text = (
+                    f"Got your order! 📍 Please share your Delivery Location or Hostel/Building name "
+                    f"(e.g., 'Hostel 3 Gate', 'Block B Room 102') so we can calculate your delivery ETA."
+                )
+                conv_state.state = "ORDER_LOCATION_PENDING"
+            else:
+                item_lines = []
+                for it in (order.items or []):
+                    item_lines.append(f"• {it.quantity}x {it.item_name} — ₹{float(it.unit_price * it.quantity):.2f}")
+                
+                items_block = "\n".join(item_lines) if item_lines else "• Items"
+                total_val = float(order.total_amount) if order.total_amount else 0.0
+
+                response_text = (
+                    f"🧾 *Order Summary (Order #{order.order_number})*\n"
+                    f"{items_block}\n"
+                    f"-------------------\n"
+                    f"💰 *Total Amount*: ₹{total_val:.2f}\n"
+                    f"📍 *Delivery Location*: {order.delivery_location}\n"
+                    f"⏱️ *Estimated Delivery*: ~{eta_minutes} mins\n\n"
+                    f"Reply *YES* to confirm your order!"
+                )
+                conv_state.state = "ORDER_PENDING_CONFIRMATION"
 
     elif ai_result.intent == "RESERVATION":
         if ai_result.is_reservation_complete:
@@ -402,3 +483,37 @@ async def process_inbound_sms_pipeline(
         "reply": response_text,
         "twilio_sid": twilio_sid,
     }
+
+
+async def send_order_status_whatsapp_notification(db: AsyncSession, order_id: uuid.UUID, new_status: str):
+    """
+    Sends an automated WhatsApp notification to customer when order status is updated by staff.
+    """
+    from sqlalchemy.orm import selectinload
+    res = await db.execute(
+        select(Order)
+        .where(Order.id == order_id)
+        .options(selectinload(Order.customer), selectinload(Order.business))
+    )
+    order = res.scalars().first()
+    if not order or not order.customer or not order.customer.phone_number:
+        return
+
+    status_messages = {
+        "in_preparation": f"👨‍🍳 Your order #{order.order_number} is now being prepared in the kitchen!",
+        "out_for_delivery": f"🛵 Your order #{order.order_number} is out for delivery! Driver is on the way to {order.delivery_location or 'your location'}.",
+        "delivered": f"📦 Your order #{order.order_number} has been delivered at {order.delivery_location or 'your location'}. Enjoy your meal!",
+        "cancelled": f"❌ Your order #{order.order_number} has been cancelled. Please contact us for any assistance.",
+    }
+
+    msg_body = status_messages.get(new_status)
+    if not msg_body:
+        return
+
+    try:
+        cust_phone = order.customer.phone_number
+        twilio_sid = twilio_service.send_message(to_number=cust_phone, body=msg_body)
+        logger.info("Sent status update notification via WhatsApp", order_id=str(order_id), new_status=new_status, twilio_sid=twilio_sid)
+    except Exception as e:
+        logger.error("Failed to send WhatsApp status notification", error=str(e))
+

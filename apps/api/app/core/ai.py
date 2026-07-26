@@ -30,6 +30,8 @@ class IntentResult(BaseModel):
     reservation_time: Optional[str] = Field(default=None, description="Time of reservation, e.g. HH:MM or 4 PM/noon")
     customer_name: Optional[str] = Field(default=None, description="Booking customer name for the reservation")
     is_reservation_complete: bool = Field(default=False, description="True ONLY if the customer has fully specified the reservation date, time, party size, and customer name")
+    delivery_location: Optional[str] = Field(default=None, description="Delivery location, hostel name, block, room number, or address specified by customer")
+    is_order_confirmed: bool = Field(default=False, description="True ONLY if customer explicitly confirms/accepts an order summary by replying YES/confirm/aama/ok")
     reply_text: str = Field(description="Drafted response to customer in their input language (English, Tamil, or Tanglish)")
 
     @property
@@ -45,7 +47,10 @@ class IntentResult(BaseModel):
             res["reservation_time"] = self.reservation_time
         if self.customer_name is not None:
             res["customer_name"] = self.customer_name
+        if self.delivery_location is not None:
+            res["delivery_location"] = self.delivery_location
         res["is_reservation_complete"] = self.is_reservation_complete
+        res["is_order_confirmed"] = self.is_order_confirmed
         return res
 
 
@@ -134,8 +139,10 @@ Your task:
       - Identify if the customer has specified: (1) reservation date, (2) reservation time, (3) party size (number of members/guests), and (4) customer name (booking name).
       - Set `is_reservation_complete = True` ONLY if all four details (date, time, party size, and customer name) are clearly specified by the customer in their message or the recent conversation history.
       - If ANY details are missing (e.g., they said "Book 2 tables" but gave no time or name, or "Book a table today at 4:00" but gave no party size or name), set `is_reservation_complete = False` and use `reply_text` to politely ask them to specify the missing details (date, time, number of members, or booking name) in their input language (English, Tamil, or Tanglish).
-      - When all 4 details are present, set `is_reservation_complete = True`. (Do NOT check or guess table availability — the backend database will validate availability and assign tables).
-    - If ordering, summarize items and total price if known. Keep responses brief for SMS/WhatsApp.
+    - If they are ordering (PLACE_ORDER):
+      - Extract ordered items and quantities.
+      - Extract delivery location / hostel / room number into `delivery_location` if provided.
+      - If the customer is replying "YES", "confirm", "ok", "aama" to confirm an order summary, set `is_order_confirmed = True`.
 """
 
         try:

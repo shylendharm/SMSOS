@@ -31,6 +31,9 @@ class OrderResponse(BaseModel):
     status: str
     notes: Optional[str] = None
     total_amount: Optional[Decimal] = None
+    delivery_location: Optional[str] = None
+    order_type: Optional[str] = "DELIVERY"
+    estimated_delivery_minutes: Optional[int] = 30
     created_at: str
     items: List[OrderItemSchema] = []
 
@@ -48,11 +51,14 @@ class CreateOrderRequest(BaseModel):
     customer_name: Optional[str] = None
     items: List[CreateOrderItemRequest]
     notes: Optional[str] = None
+    delivery_location: Optional[str] = None
+    order_type: Optional[str] = "DELIVERY"
 
 
 class UpdateOrderRequest(BaseModel):
     status: Optional[str] = None
     notes: Optional[str] = None
+    delivery_location: Optional[str] = None
 
 
 def format_order_response(order: Order) -> dict:
@@ -64,6 +70,9 @@ def format_order_response(order: Order) -> dict:
         "status": order.status,
         "notes": order.notes,
         "total_amount": float(order.total_amount) if order.total_amount is not None else 0.0,
+        "delivery_location": getattr(order, "delivery_location", None),
+        "order_type": getattr(order, "order_type", "DELIVERY"),
+        "estimated_delivery_minutes": getattr(order, "estimated_delivery_minutes", 30),
         "created_at": order.created_at.isoformat(),
         "items": [
             {
@@ -194,13 +203,19 @@ async def update_order(
                 to_number = f"whatsapp:{customer.phone_number}" if is_whatsapp else customer.phone_number
 
                 # Determine notification content
-                status_msg = f"Your order #{order.order_number} status has been updated to: {req.status.upper()}."
-                if req.status.lower() == "ready":
-                    status_msg = f"Your order #{order.order_number} is ready for pickup/delivery!"
-                elif req.status.lower() == "completed":
-                    status_msg = f"Your order #{order.order_number} has been completed. Thank you for your business!"
-                elif req.status.lower() == "cancelled":
-                    status_msg = f"Your order #{order.order_number} has been cancelled."
+                st_lower = req.status.lower()
+                if st_lower in ["in_preparation", "preparing"]:
+                    status_msg = f"👨‍🍳 Your order #{order.order_number} is now being prepared in the kitchen!"
+                elif st_lower in ["out_for_delivery", "ready"]:
+                    loc_str = order.delivery_location or "your location"
+                    status_msg = f"🛵 Your order #{order.order_number} is out for delivery! Driver is on the way to {loc_str}."
+                elif st_lower in ["delivered", "completed"]:
+                    loc_str = order.delivery_location or "your location"
+                    status_msg = f"📦 Your order #{order.order_number} has been delivered at {loc_str}. Enjoy your meal!"
+                elif st_lower == "cancelled":
+                    status_msg = f"❌ Your order #{order.order_number} has been cancelled."
+                else:
+                    status_msg = f"Your order #{order.order_number} status updated to: {req.status.upper()}."
 
                 # Send outbound message
                 twilio_sid = twilio_service.send_message(to_number=to_number, body=status_msg)

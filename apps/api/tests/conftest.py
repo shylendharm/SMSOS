@@ -13,7 +13,7 @@ from app.db.models import *  # noqa: F401,F403
 TEST_DATABASE_URL = settings.DATABASE_URL.replace("smsos_dev", "smsos_test")
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session", autouse=True)
 async def test_engine():
     engine = create_async_engine(
         TEST_DATABASE_URL,

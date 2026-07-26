@@ -347,7 +347,7 @@ async function renderOrdersView(container) {
   state.orders = orders;
 
   const totalOrders = orders.length;
-  const pendingCount = orders.filter((o) => o.status === 'pending').length;
+  const pendingCount = orders.filter((o) => !['delivered', 'completed', 'cancelled'].includes(o.status)).length;
   const totalRevenue = orders.reduce((acc, o) => acc + (parseFloat(o.total_amount) || 0), 0);
 
   container.innerHTML = `
@@ -390,29 +390,37 @@ async function renderOrdersView(container) {
               <th>Channel</th>
               <th>Customer</th>
               <th>Items</th>
+              <th>Delivery Spot & ETA</th>
               <th>Total Amount</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            ${orders.length === 0 ? '<tr><td colspan="7" style="text-align:center; padding:2rem;">No orders found</td></tr>' : ''}
+            ${orders.length === 0 ? '<tr><td colspan="8" style="text-align:center; padding:2rem;">No orders found</td></tr>' : ''}
             ${orders.map((o) => `
               <tr>
-                <td><strong>${o.order_number}</strong></td>
+                <td><strong>#${o.order_number}</strong></td>
                 <td><span class="badge badge-channel">${o.channel || 'whatsapp'}</span></td>
                 <td>${o.customer_name || o.customer_phone || 'Customer'}</td>
                 <td>${(o.items || []).map((i) => `${i.quantity}x ${i.item_name}`).join(', ') || 'N/A'}</td>
-                <td><strong>₹${parseFloat(o.total_amount || 0).toFixed(2)}</strong></td>
-                <td><span class="badge badge-${o.status}">${o.status}</span></td>
                 <td>
-                  ${o.status === 'pending' ? `
-                    <button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.8rem;" onclick="updateOrderStatus('${o.id}', 'ready')">Mark Ready</button>
+                  ${o.delivery_location ? `<div style="font-weight:500;">📍 ${o.delivery_location}</div>` : '<span style="color:var(--text-muted);">Self / Takeaway</span>'}
+                  ${o.estimated_delivery_minutes ? `<small style="color:var(--accent-amber);">⏱️ ~${o.estimated_delivery_minutes} mins</small>` : ''}
+                </td>
+                <td><strong>₹${parseFloat(o.total_amount || 0).toFixed(2)}</strong></td>
+                <td><span class="badge badge-${o.status}">${o.status.replace('_', ' ')}</span></td>
+                <td>
+                  ${['confirmed', 'pending', 'pending_confirmation', 'draft'].includes(o.status) ? `
+                    <button class="btn btn-primary" style="padding:0.3rem 0.6rem; font-size:0.8rem;" onclick="updateOrderStatus('${o.id}', 'in_preparation')">👨‍🍳 Start Prep</button>
                   ` : ''}
-                  ${o.status === 'ready' ? `
-                    <button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.8rem; background:rgba(16,185,129,0.2);" onclick="updateOrderStatus('${o.id}', 'completed')">Complete</button>
+                  ${o.status === 'in_preparation' ? `
+                    <button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.8rem; background:rgba(99,102,241,0.2);" onclick="updateOrderStatus('${o.id}', 'out_for_delivery')">🛵 Out for Delivery</button>
                   ` : ''}
-                  ${o.status !== 'completed' && o.status !== 'cancelled' ? `
+                  ${o.status === 'out_for_delivery' || o.status === 'ready' ? `
+                    <button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.8rem; background:rgba(16,185,129,0.2);" onclick="updateOrderStatus('${o.id}', 'delivered')">📦 Delivered</button>
+                  ` : ''}
+                  ${o.status !== 'delivered' && o.status !== 'completed' && o.status !== 'cancelled' ? `
                     <button class="btn-icon" style="color:var(--accent-amber);" title="Cancel Order" onclick="updateOrderStatus('${o.id}', 'cancelled')"><i data-lucide="x-circle"></i></button>
                   ` : ''}
                   <button class="btn-icon" style="color:var(--accent-rose);" title="Delete Order" onclick="deleteOrder('${o.id}')"><i data-lucide="trash-2"></i></button>
