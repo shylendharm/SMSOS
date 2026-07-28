@@ -171,7 +171,7 @@ Your task:
                 "}"
             )
             payload = {
-                "model": "grok-2-latest",
+                "model": "grok-beta",
                 "messages": [
                     {"role": "system", "content": grok_system_prompt},
                     {"role": "user", "content": message_text},
@@ -197,7 +197,7 @@ Your task:
             try:
                 # Fallback to Gemini if configured
                 response = self.client.models.generate_content(
-                    model="gemini-2.5-flash-lite",
+                    model="gemini-2.5-flash",
                     contents=message_text,
                     config=types.GenerateContentConfig(
                         system_instruction=system_instruction,
