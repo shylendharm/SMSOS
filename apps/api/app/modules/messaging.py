@@ -325,6 +325,23 @@ async def process_inbound_sms_pipeline(
             if deliv_loc:
                 order.delivery_location = deliv_loc
 
+            # Filter out AI-hallucinated items that don't appear in user's raw message
+            # The AI sometimes infers items from conversation context even when the user
+            # only sent a location or unrelated text (e.g. "IMA Venpa block")
+            if items_extracted:
+                body_lower_check = body.lower()
+                verified_items = []
+                for itm in items_extracted:
+                    item_name = itm.get("item_name", "") if isinstance(itm, dict) else str(itm)
+                    # Check if item name or any word of it appears in user's actual message
+                    name_lower = item_name.lower()
+                    words = name_lower.split()
+                    if name_lower in body_lower_check or any(
+                        len(w) >= 3 and w in body_lower_check for w in words
+                    ):
+                        verified_items.append(itm)
+                items_extracted = verified_items
+
             if items_extracted:
                 from sqlalchemy import delete
                 # Fetch existing items for this order
