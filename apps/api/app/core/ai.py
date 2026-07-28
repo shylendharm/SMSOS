@@ -145,25 +145,74 @@ Your task:
       - If the customer is replying "YES", "confirm", "ok", "aama" to confirm an order summary, set `is_order_confirmed = True`.
 """
 
-        try:
-            # We use gemini-1.5-flash or gemini-2.5-flash for speed
-            response = self.client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=message_text,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    response_mime_type="application/json",
-                    response_schema=IntentResult,
-                    temperature=0.2,
-                ),
+        xai_key = settings.XAI_API_KEY or settings.GROK_API_KEY
+        if xai_key:
+            import httpx
+            headers = {
+                "Authorization": f"Bearer {xai_key}",
+                "Content-Type": "application/json",
+            }
+            grok_system_prompt = system_instruction + (
+                "\n\nCRITICAL OUTPUT FORMAT REQUIREMENT:\n"
+                "Return ONLY a valid JSON object with the following fields:\n"
+                "{\n"
+                '  "intent": "INQUIRY" | "PLACE_ORDER" | "RESERVATION" | "CHECK_STATUS" | "OTHER",\n'
+                '  "confidence": float,\n'
+                '  "language": "english" | "tamil" | "tanglish",\n'
+                '  "items": [{"item_name": str, "quantity": int}],\n'
+                '  "party_size": int | null,\n'
+                '  "reservation_date": str | null,\n'
+                '  "reservation_time": str | null,\n'
+                '  "customer_name": str | null,\n'
+                '  "is_reservation_complete": bool,\n'
+                '  "delivery_location": str | null,\n'
+                '  "is_order_confirmed": bool,\n'
+                '  "reply_text": str\n'
+                "}"
             )
+            payload = {
+                "model": "grok-2-latest",
+                "messages": [
+                    {"role": "system", "content": grok_system_prompt},
+                    {"role": "user", "content": message_text},
+                ],
+                "temperature": 0.1,
+                "response_format": {"type": "json_object"},
+            }
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.post("https://api.x.ai/v1/chat/completions", json=payload, headers=headers)
+                    if resp.status_code == 200:
+                        resp_json = resp.json()
+                        content = resp_json["choices"][0]["message"]["content"]
+                        result_data = json.loads(content)
+                        logger.info("Successfully processed message with Grok AI")
+                        return IntentResult(**result_data)
+                    else:
+                        logger.error("Grok API call failed", status_code=resp.status_code, body=resp.text)
+            except Exception as e:
+                logger.error("Grok API exception", error=str(e))
 
-            if response.text:
-                result_data = json.loads(response.text)
-                return IntentResult(**result_data)
-        except Exception as e:
-            logger.error("Gemini API call failed", error=str(e))
-            return self._fallback_response(message_text)
+        if self.client:
+            try:
+                # Fallback to Gemini if configured
+                response = self.client.models.generate_content(
+                    model="gemini-2.5-flash-lite",
+                    contents=message_text,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_instruction,
+                        response_mime_type="application/json",
+                        response_schema=IntentResult,
+                        temperature=0.2,
+                    ),
+                )
+
+                if response.text:
+                    result_data = json.loads(response.text)
+                    return IntentResult(**result_data)
+            except Exception as e:
+                logger.error("Gemini API call failed", error=str(e))
+                return self._fallback_response(message_text)
 
         return self._fallback_response(message_text)
 
