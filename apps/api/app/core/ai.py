@@ -221,7 +221,7 @@ Your task:
                 "}"
             )
             payload = {
-                "model": "meta-llama/llama-3.3-70b-instruct:free",
+                "model": "openrouter/free",
                 "messages": [
                     {"role": "system", "content": openrouter_prompt},
                     {"role": "user", "content": message_text},
