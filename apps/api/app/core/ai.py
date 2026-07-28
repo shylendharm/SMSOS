@@ -193,6 +193,56 @@ Your task:
             except Exception as e:
                 logger.error("Grok API exception", error=str(e))
 
+        openrouter_key = settings.OPENROUTER_API_KEY
+        if openrouter_key:
+            import httpx
+            headers = {
+                "Authorization": f"Bearer {openrouter_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "http://localhost:8000",
+                "X-Title": "SMSOS",
+            }
+            openrouter_prompt = system_instruction + (
+                "\n\nCRITICAL OUTPUT FORMAT REQUIREMENT:\n"
+                "Return ONLY a valid JSON object with the following fields:\n"
+                "{\n"
+                '  "intent": "INQUIRY" | "PLACE_ORDER" | "RESERVATION" | "CHECK_STATUS" | "OTHER",\n'
+                '  "confidence": float,\n'
+                '  "language": "english" | "tamil" | "tanglish",\n'
+                '  "items": [{"item_name": str, "quantity": int}],\n'
+                '  "party_size": int | null,\n'
+                '  "reservation_date": str | null,\n'
+                '  "reservation_time": str | null,\n'
+                '  "customer_name": str | null,\n'
+                '  "is_reservation_complete": bool,\n'
+                '  "delivery_location": str | null,\n'
+                '  "is_order_confirmed": bool,\n'
+                '  "reply_text": str\n'
+                "}"
+            )
+            payload = {
+                "model": "meta-llama/llama-3.3-70b-instruct:free",
+                "messages": [
+                    {"role": "system", "content": openrouter_prompt},
+                    {"role": "user", "content": message_text},
+                ],
+                "temperature": 0.1,
+                "response_format": {"type": "json_object"},
+            }
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.post("https://openrouter.ai/api/v1/chat/completions", json=payload, headers=headers)
+                    if resp.status_code == 200:
+                        resp_json = resp.json()
+                        content = resp_json["choices"][0]["message"]["content"]
+                        result_data = json.loads(content)
+                        logger.info("Successfully processed message with OpenRouter AI")
+                        return IntentResult(**result_data)
+                    else:
+                        logger.error("OpenRouter API call failed", status_code=resp.status_code, body=resp.text)
+            except Exception as e:
+                logger.error("OpenRouter API exception", error=str(e))
+
         if self.client:
             try:
                 # Fallback to Gemini if configured
