@@ -148,7 +148,7 @@ Your task:
         try:
             # We use gemini-1.5-flash or gemini-2.5-flash for speed
             response = self.client.models.generate_content(
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 contents=message_text,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
