@@ -197,7 +197,7 @@ Your task:
             try:
                 # Fallback to Gemini if configured
                 response = self.client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model="gemini-2.0-flash",
                     contents=message_text,
                     config=types.GenerateContentConfig(
                         system_instruction=system_instruction,
