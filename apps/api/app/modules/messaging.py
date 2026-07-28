@@ -371,16 +371,16 @@ async def process_inbound_sms_pipeline(
 
                 await db.flush()
 
-                res_all = await db.execute(select(OrderItem).where(OrderItem.order_id == order.id))
-                all_items = list(res_all.scalars().all())
-                order.items = all_items
+            # Always fetch fresh items asynchronously to prevent lazy-loading errors on order.items
+            res_all = await db.execute(select(OrderItem).where(OrderItem.order_id == order.id))
+            all_items = list(res_all.scalars().all())
 
-                total = Decimal("0.00")
-                for it in all_items:
-                    total += Decimal(str(it.unit_price)) * it.quantity
-                order.total_amount = total
+            total = Decimal("0.00")
+            for it in all_items:
+                total += Decimal(str(it.unit_price)) * it.quantity
+            order.total_amount = total
 
-            total_items_count = sum([it.quantity for it in order.items]) if order.items else len(items_extracted)
+            total_items_count = sum([it.quantity for it in all_items]) if all_items else len(items_extracted)
             prep_time = 15 if total_items_count <= 3 else 20
             travel_time = 15
             eta_minutes = prep_time + travel_time
@@ -394,7 +394,7 @@ async def process_inbound_sms_pipeline(
                 conv_state.state = "ORDER_LOCATION_PENDING"
             else:
                 item_lines = []
-                for it in (order.items or []):
+                for it in all_items:
                     item_lines.append(f"• {it.quantity}x {it.item_name} — ₹{float(it.unit_price * it.quantity):.2f}")
                 
                 items_block = "\n".join(item_lines) if item_lines else "• Items"
