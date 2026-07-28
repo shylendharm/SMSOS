@@ -332,7 +332,12 @@ async def process_inbound_sms_pipeline(
                 existing_items_list = list(res_existing.scalars().all())
 
                 body_lower = body.lower()
-                is_replacement = any(w in body_lower for w in ["start over", "cancel order", "replace order", "clear order", "instead of", "change order"])
+                is_replacement = any(w in body_lower for w in [
+                    "start over", "cancel order", "replace order", "clear order",
+                    "instead of", "change order", "remove", "just want",
+                    "only want", "alone", "without", "don't want", "dont want",
+                    "no more", "i just", "i only", "just 1", "just 2", "just 3",
+                ])
 
                 if is_replacement:
                     await db.execute(delete(OrderItem).where(OrderItem.order_id == order.id))
