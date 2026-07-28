@@ -251,14 +251,19 @@ async def process_inbound_sms_pipeline(
         existing_draft = recent_draft_query.scalars().first()
 
         # 1. Expire stale draft orders (> 10 minutes old)
-        if existing_draft and existing_draft.created_at:
-            now_utc = datetime.now(timezone.utc)
-            draft_time = existing_draft.created_at
-            if draft_time.tzinfo is None:
-                draft_time = draft_time.replace(tzinfo=timezone.utc)
-            if (now_utc - draft_time) > timedelta(minutes=10):
-                existing_draft.status = "cancelled"
-                existing_draft = None
+        if existing_draft:
+            draft_time = existing_draft.__dict__.get("created_at")
+            if draft_time is None:
+                await db.refresh(existing_draft, ["created_at"])
+                draft_time = existing_draft.created_at
+            
+            if draft_time:
+                now_utc = datetime.now(timezone.utc)
+                if draft_time.tzinfo is None:
+                    draft_time = draft_time.replace(tzinfo=timezone.utc)
+                if (now_utc - draft_time) > timedelta(minutes=10):
+                    existing_draft.status = "cancelled"
+                    existing_draft = None
 
         deliv_loc = ai_result.entities.get("delivery_location")
         items_extracted = ai_result.entities.get("items", [])
@@ -309,6 +314,7 @@ async def process_inbound_sms_pipeline(
                     status="pending_confirmation",
                     total_amount=Decimal("0.00"),
                     notes=f"AI parsed order from: '{body}'",
+                    created_at=datetime.now(timezone.utc),
                 )
                 db.add(order)
                 await db.flush()
