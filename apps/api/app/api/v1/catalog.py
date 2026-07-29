@@ -75,7 +75,7 @@ async def create_catalog_item(
         category=req.category,
         is_available=req.is_available,
     )
-
+    return format_catalog_response(item)
 
 class UpdateCatalogItemRequest(BaseModel):
     name: Optional[str] = None
