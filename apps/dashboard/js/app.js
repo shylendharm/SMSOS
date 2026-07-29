@@ -12,6 +12,7 @@ const state = {
   customers: [],
   reservations: [],
   conversations: [],
+  inventory: [],
   analytics: {},
 };
 
@@ -301,6 +302,13 @@ async function renderView(route) {
         await renderCatalogView(mainView);
         break;
 
+      case 'inventory':
+        pageTitle.innerText = 'Inventory Management';
+        pageSubtitle.innerText = 'Track stock levels, set thresholds, and manage supplies';
+        headerActions.innerHTML = `<button class="btn btn-primary" onclick="openCreateInventoryModal()"><i data-lucide="plus"></i> Add Stock Item</button>`;
+        await renderInventoryView(mainView);
+        break;
+
       case 'customers':
         pageTitle.innerText = 'Customer Directory';
         pageSubtitle.innerText = 'Customer details, phone contacts, and order histories';
@@ -317,14 +325,14 @@ async function renderView(route) {
 
       case 'conversations':
         pageTitle.innerText = 'AI WhatsApp Conversations';
-        pageSubtitle.innerText = 'Live chat histories between Gemini AI and customers';
+        pageSubtitle.innerText = 'Live chat histories between AI and customers';
         headerActions.innerHTML = ``;
         await renderConversationsView(mainView);
         break;
 
       case 'analytics':
         pageTitle.innerText = 'Business Analytics';
-        pageSubtitle.innerText = 'Revenue growth, top items, and conversation metrics';
+        pageSubtitle.innerText = 'Revenue trends, top items, and performance metrics';
         headerActions.innerHTML = ``;
         await renderAnalyticsView(mainView);
         break;
@@ -339,12 +347,42 @@ async function renderView(route) {
   lucide.createIcons();
 }
 
-// ----------------------------------------------------
-// ORDERS VIEW (PHASE 5)
-// ----------------------------------------------------
+// ============================================================
+// STATUS HELPERS
+// ============================================================
+const STATUS_CONFIG = {
+  draft:                { label: 'Draft',            color: '#6b7280', bg: 'rgba(107,114,128,0.15)' },
+  pending:              { label: 'Pending',          color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+  pending_confirmation: { label: 'Awaiting Confirm', color: '#3b82f6', bg: 'rgba(59,130,246,0.15)' },
+  confirmed:            { label: 'Confirmed',        color: '#10b981', bg: 'rgba(16,185,129,0.15)' },
+  in_preparation:       { label: 'Preparing',        color: '#f97316', bg: 'rgba(249,115,22,0.15)' },
+  out_for_delivery:     { label: 'Out for Delivery', color: '#8b5cf6', bg: 'rgba(139,92,246,0.15)' },
+  ready:                { label: 'Ready',            color: '#06b6d4', bg: 'rgba(6,182,212,0.15)' },
+  delivered:            { label: 'Delivered',         color: '#10b981', bg: 'rgba(16,185,129,0.20)' },
+  completed:            { label: 'Completed',        color: '#10b981', bg: 'rgba(16,185,129,0.20)' },
+  cancelled:            { label: 'Cancelled',        color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
+};
+
+function statusBadge(status) {
+  const cfg = STATUS_CONFIG[status] || { label: status, color: '#6b7280', bg: 'rgba(107,114,128,0.15)' };
+  const pulse = status === 'confirmed' ? 'animation: pulse 2s infinite;' : '';
+  return `<span style="display:inline-block; padding:0.25rem 0.65rem; border-radius:20px; font-size:0.75rem; font-weight:600; color:${cfg.color}; background:${cfg.bg}; border:1px solid ${cfg.color}22; ${pulse}">${cfg.label}</span>`;
+}
+
+// ============================================================
+// ORDERS VIEW
+// ============================================================
+let orderStatusFilter = 'all';
+
 async function renderOrdersView(container) {
   const orders = await api('/orders');
   state.orders = orders;
+
+  const filtered = orderStatusFilter === 'all' ? orders : orders.filter(o => {
+    if (orderStatusFilter === 'active') return !['delivered', 'completed', 'cancelled'].includes(o.status);
+    if (orderStatusFilter === 'delivered') return ['delivered', 'completed'].includes(o.status);
+    return o.status === orderStatusFilter;
+  });
 
   const totalOrders = orders.length;
   const pendingCount = orders.filter((o) => !['delivered', 'completed', 'cancelled'].includes(o.status)).length;
@@ -367,7 +405,7 @@ async function renderOrdersView(container) {
         </div>
         <div class="stat-info">
           <div class="value">${pendingCount}</div>
-          <div class="label">Pending Orders</div>
+          <div class="label">Active Orders</div>
         </div>
       </div>
       <div class="glass-panel stat-card">
@@ -381,6 +419,16 @@ async function renderOrdersView(container) {
       </div>
     </div>
 
+    <!-- Status Filter -->
+    <div class="glass-panel" style="padding: 0.75rem 1.25rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+      <span style="font-size: 0.85rem; font-weight: 500; color: var(--text-muted); margin-right: 0.25rem;">Filter:</span>
+      ${['all', 'active', 'confirmed', 'in_preparation', 'out_for_delivery', 'delivered', 'cancelled'].map(f => {
+        const label = f === 'all' ? 'All' : f === 'active' ? 'Active' : (STATUS_CONFIG[f]?.label || f);
+        const isActive = orderStatusFilter === f;
+        return `<button class="btn ${isActive ? 'btn-primary' : ''}" style="padding:0.3rem 0.7rem; font-size:0.8rem;" onclick="orderStatusFilter='${f}'; renderView('orders');">${label}</button>`;
+      }).join('')}
+    </div>
+
     <div class="glass-panel" style="padding: 1.25rem;">
       <div class="table-container">
         <table class="data-table">
@@ -388,39 +436,37 @@ async function renderOrdersView(container) {
             <tr>
               <th>Order Ref</th>
               <th>Channel</th>
-              <th>Customer</th>
               <th>Items</th>
-              <th>Delivery Spot & ETA</th>
-              <th>Total Amount</th>
+              <th>Delivery & ETA</th>
+              <th>Total</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            ${orders.length === 0 ? '<tr><td colspan="8" style="text-align:center; padding:2rem;">No orders found</td></tr>' : ''}
-            ${orders.map((o) => `
-              <tr>
+            ${filtered.length === 0 ? '<tr><td colspan="7" style="text-align:center; padding:2rem;">No orders found</td></tr>' : ''}
+            ${filtered.map((o) => `
+              <tr style="${o.status === 'confirmed' ? 'background: rgba(16,185,129,0.05);' : ''}">
                 <td><strong>#${o.order_number}</strong></td>
                 <td><span class="badge badge-channel">${o.channel || 'whatsapp'}</span></td>
-                <td>${o.customer_name || o.customer_phone || 'Customer'}</td>
                 <td>${(o.items || []).map((i) => `${i.quantity}x ${i.item_name}`).join(', ') || 'N/A'}</td>
                 <td>
                   ${o.delivery_location ? `<div style="font-weight:500;">📍 ${o.delivery_location}</div>` : '<span style="color:var(--text-muted);">Self / Takeaway</span>'}
                   ${o.estimated_delivery_minutes ? `<small style="color:var(--accent-amber);">⏱️ ~${o.estimated_delivery_minutes} mins</small>` : ''}
                 </td>
                 <td><strong>₹${parseFloat(o.total_amount || 0).toFixed(2)}</strong></td>
-                <td><span class="badge badge-${o.status}">${o.status.replace('_', ' ')}</span></td>
+                <td>${statusBadge(o.status)}</td>
                 <td>
                   ${['confirmed', 'pending', 'pending_confirmation', 'draft'].includes(o.status) ? `
-                    <button class="btn btn-primary" style="padding:0.3rem 0.6rem; font-size:0.8rem;" onclick="updateOrderStatus('${o.id}', 'in_preparation')">👨‍🍳 Start Prep</button>
+                    <button class="btn btn-primary" style="padding:0.3rem 0.6rem; font-size:0.8rem;" onclick="updateOrderStatus('${o.id}', 'in_preparation')">👨‍🍳 Prep</button>
                   ` : ''}
                   ${o.status === 'in_preparation' ? `
-                    <button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.8rem; background:rgba(99,102,241,0.2);" onclick="updateOrderStatus('${o.id}', 'out_for_delivery')">🛵 Out for Delivery</button>
+                    <button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.8rem; background:rgba(139,92,246,0.2);" onclick="updateOrderStatus('${o.id}', 'out_for_delivery')">🛵 Dispatch</button>
                   ` : ''}
                   ${o.status === 'out_for_delivery' || o.status === 'ready' ? `
                     <button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.8rem; background:rgba(16,185,129,0.2);" onclick="updateOrderStatus('${o.id}', 'delivered')">📦 Delivered</button>
                   ` : ''}
-                  ${o.status !== 'delivered' && o.status !== 'completed' && o.status !== 'cancelled' ? `
+                  ${!['delivered', 'completed', 'cancelled'].includes(o.status) ? `
                     <button class="btn-icon" style="color:var(--accent-amber);" title="Cancel Order" onclick="updateOrderStatus('${o.id}', 'cancelled')"><i data-lucide="x-circle"></i></button>
                   ` : ''}
                   <button class="btn-icon" style="color:var(--accent-rose);" title="Delete Order" onclick="deleteOrder('${o.id}')"><i data-lucide="trash-2"></i></button>
@@ -484,14 +530,32 @@ function openCreateOrderModal() {
   });
 }
 
-// ----------------------------------------------------
-// CATALOG VIEW (PHASE 5)
-// ----------------------------------------------------
+// ============================================================
+// CATALOG VIEW — Edit + Availability Toggle + Category Filter
+// ============================================================
+let catalogCategoryFilter = 'all';
+
 async function renderCatalogView(container) {
   const items = await api('/catalog');
   state.catalog = items;
 
+  // Extract unique categories
+  const categories = [...new Set(items.map(i => i.category || 'General'))].sort();
+
+  const filtered = catalogCategoryFilter === 'all'
+    ? items
+    : items.filter(i => (i.category || 'General') === catalogCategoryFilter);
+
   container.innerHTML = `
+    <!-- Category Filter -->
+    <div class="glass-panel" style="padding: 0.75rem 1.25rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+      <span style="font-size: 0.85rem; font-weight: 500; color: var(--text-muted); margin-right: 0.25rem;">Category:</span>
+      <button class="btn ${catalogCategoryFilter === 'all' ? 'btn-primary' : ''}" style="padding:0.3rem 0.7rem; font-size:0.8rem;" onclick="catalogCategoryFilter='all'; renderView('catalog');">All</button>
+      ${categories.map(cat => `
+        <button class="btn ${catalogCategoryFilter === cat ? 'btn-primary' : ''}" style="padding:0.3rem 0.7rem; font-size:0.8rem;" onclick="catalogCategoryFilter='${cat}'; renderView('catalog');">${cat}</button>
+      `).join('')}
+    </div>
+
     <div class="glass-panel" style="padding: 1.25rem;">
       <div class="table-container">
         <table class="data-table">
@@ -506,19 +570,20 @@ async function renderCatalogView(container) {
             </tr>
           </thead>
           <tbody>
-            ${items.length === 0 ? '<tr><td colspan="6" style="text-align:center; padding:2rem;">No items in catalog</td></tr>' : ''}
-            ${items.map((item) => `
-              <tr>
-                <td><strong>${item.name}</strong></td>
-                <td>${item.category || 'General'}</td>
-                <td>₹${parseFloat(item.price).toFixed(2)}</td>
+            ${filtered.length === 0 ? '<tr><td colspan="6" style="text-align:center; padding:2rem;">No items in catalog</td></tr>' : ''}
+            ${filtered.map((item) => `
+              <tr style="${!item.is_available ? 'opacity: 0.6;' : ''}">
+                <td><strong>${item.name}</strong>${item.description ? `<br><small style="color:var(--text-muted);">${item.description}</small>` : ''}</td>
+                <td><span class="badge" style="background:rgba(139,92,246,0.15); color:#8b5cf6; padding:0.2rem 0.5rem; border-radius:12px; font-size:0.75rem;">${item.category || 'General'}</span></td>
+                <td><strong>₹${parseFloat(item.price).toFixed(2)}</strong></td>
                 <td>${item.unit || 'pcs'}</td>
                 <td>
-                  <span class="badge badge-${item.is_available ? 'active' : 'cancelled'}">
-                    ${item.is_available ? 'In Stock' : 'Out of Stock'}
-                  </span>
+                  <button class="btn" style="padding:0.25rem 0.6rem; font-size:0.75rem; background:${item.is_available ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)'}; color:${item.is_available ? '#10b981' : '#ef4444'}; border:1px solid ${item.is_available ? '#10b98133' : '#ef444433'};" onclick="toggleCatalogAvailability('${item.id}', ${!item.is_available})">
+                    ${item.is_available ? '✓ In Stock' : '✗ Out of Stock'}
+                  </button>
                 </td>
-                <td>
+                <td style="display:flex; gap:0.25rem;">
+                  <button class="btn-icon" style="color:var(--primary);" title="Edit Item" onclick='openEditCatalogModal(${JSON.stringify(item).replace(/'/g, "&#39;")})'><i data-lucide="pencil"></i></button>
                   <button class="btn-icon" style="color:var(--accent-rose);" title="Delete Item" onclick="deleteCatalogItem('${item.id}')"><i data-lucide="trash-2"></i></button>
                 </td>
               </tr>
@@ -548,24 +613,260 @@ function openCreateCatalogModal() {
       <label>Unit</label>
       <input id="modal-cat-unit" class="form-control" placeholder="cup">
     </div>
+    <div class="form-group">
+      <label>Description (optional)</label>
+      <input id="modal-cat-desc" class="form-control" placeholder="Hot filter coffee">
+    </div>
   `, async () => {
     const name = document.getElementById('modal-cat-name').value;
     const price = parseFloat(document.getElementById('modal-cat-price').value);
-    const category = document.getElementById('modal-cat-category').value;
-    const unit = document.getElementById('modal-cat-unit').value;
+    const category = document.getElementById('modal-cat-category').value || 'General';
+    const unit = document.getElementById('modal-cat-unit').value || 'piece';
+    const description = document.getElementById('modal-cat-desc').value;
 
     await api('/catalog', {
       method: 'POST',
-      body: JSON.stringify({ name, price, category, unit }),
+      body: JSON.stringify({ name, price, category, unit, description }),
     });
     showToast('Catalog item added!');
     renderView('catalog');
   });
 }
 
-// ----------------------------------------------------
-// CUSTOMERS VIEW (PHASE 5)
-// ----------------------------------------------------
+function openEditCatalogModal(item) {
+  openModal('Edit Catalog Item', `
+    <div class="form-group">
+      <label>Item Name</label>
+      <input id="modal-cat-name" class="form-control" value="${item.name}" required>
+    </div>
+    <div class="form-group">
+      <label>Price (₹)</label>
+      <input id="modal-cat-price" type="number" step="0.01" class="form-control" value="${parseFloat(item.price)}" required>
+    </div>
+    <div class="form-group">
+      <label>Category</label>
+      <input id="modal-cat-category" class="form-control" value="${item.category || 'General'}">
+    </div>
+    <div class="form-group">
+      <label>Unit</label>
+      <input id="modal-cat-unit" class="form-control" value="${item.unit || 'piece'}">
+    </div>
+    <div class="form-group">
+      <label>Description (optional)</label>
+      <input id="modal-cat-desc" class="form-control" value="${item.description || ''}">
+    </div>
+  `, async () => {
+    const name = document.getElementById('modal-cat-name').value;
+    const price = parseFloat(document.getElementById('modal-cat-price').value);
+    const category = document.getElementById('modal-cat-category').value;
+    const unit = document.getElementById('modal-cat-unit').value;
+    const description = document.getElementById('modal-cat-desc').value;
+
+    await api(`/catalog/${item.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name, price, category, unit, description }),
+    });
+    showToast('Catalog item updated!');
+    renderView('catalog');
+  });
+}
+
+async function toggleCatalogAvailability(itemId, newValue) {
+  try {
+    await api(`/catalog/${itemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_available: newValue }),
+    });
+    showToast(newValue ? 'Item marked as In Stock' : 'Item marked as Out of Stock');
+    renderView('catalog');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+// ============================================================
+// INVENTORY VIEW (NEW)
+// ============================================================
+let inventoryLowStockFilter = false;
+
+async function renderInventoryView(container) {
+  const items = await api(`/inventory?low_stock_only=${inventoryLowStockFilter}`);
+  state.inventory = items;
+
+  const totalItems = items.length;
+  const lowStockCount = items.filter(i => i.is_low_stock).length;
+  const totalStockValue = items.reduce((acc, i) => acc + parseFloat(i.current_quantity || 0), 0);
+
+  container.innerHTML = `
+    <div class="stats-grid">
+      <div class="glass-panel stat-card">
+        <div class="stat-icon" style="background: rgba(99, 102, 241, 0.2); color: var(--primary);">
+          <i data-lucide="package"></i>
+        </div>
+        <div class="stat-info">
+          <div class="value">${totalItems}</div>
+          <div class="label">Total Items</div>
+        </div>
+      </div>
+      <div class="glass-panel stat-card">
+        <div class="stat-icon" style="background: rgba(239, 68, 68, 0.2); color: var(--accent-rose);">
+          <i data-lucide="alert-triangle"></i>
+        </div>
+        <div class="stat-info">
+          <div class="value">${lowStockCount}</div>
+          <div class="label">Low Stock Alerts</div>
+        </div>
+      </div>
+      <div class="glass-panel stat-card">
+        <div class="stat-icon" style="background: rgba(16, 185, 129, 0.2); color: var(--accent-emerald);">
+          <i data-lucide="bar-chart-3"></i>
+        </div>
+        <div class="stat-info">
+          <div class="value">${totalStockValue.toFixed(1)}</div>
+          <div class="label">Total Stock Units</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Low Stock Filter -->
+    <div class="glass-panel" style="padding: 0.75rem 1.25rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.75rem;">
+      <span style="font-size: 0.85rem; font-weight: 500; color: var(--text-muted);">Filter:</span>
+      <button class="btn ${!inventoryLowStockFilter ? 'btn-primary' : ''}" style="padding:0.3rem 0.7rem; font-size:0.8rem;" onclick="inventoryLowStockFilter=false; renderView('inventory');">All Items</button>
+      <button class="btn ${inventoryLowStockFilter ? 'btn-primary' : ''}" style="padding:0.3rem 0.7rem; font-size:0.8rem; ${inventoryLowStockFilter ? '' : lowStockCount > 0 ? 'color:var(--accent-rose);' : ''}" onclick="inventoryLowStockFilter=true; renderView('inventory');">
+        🔴 Low Stock Only ${lowStockCount > 0 ? `(${lowStockCount})` : ''}
+      </button>
+    </div>
+
+    <div class="glass-panel" style="padding: 1.25rem;">
+      <div class="table-container">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Item Name</th>
+              <th>Current Qty</th>
+              <th>Unit</th>
+              <th>Low Threshold</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.length === 0 ? '<tr><td colspan="6" style="text-align:center; padding:2rem;">No inventory items found</td></tr>' : ''}
+            ${items.map(item => {
+              const isLow = item.is_low_stock;
+              const rowStyle = isLow ? 'background: rgba(239,68,68,0.05); border-left: 3px solid var(--accent-rose);' : '';
+              const threshold = item.threshold ? item.threshold.low_threshold : 5;
+              return `
+                <tr style="${rowStyle}">
+                  <td><strong>${item.item_name}</strong></td>
+                  <td style="font-weight: 600; color: ${isLow ? 'var(--accent-rose)' : 'var(--text-main)'};">${parseFloat(item.current_quantity).toFixed(1)}</td>
+                  <td>${item.unit}</td>
+                  <td>${threshold}</td>
+                  <td>
+                    ${isLow
+                      ? '<span style="display:inline-block; padding:0.2rem 0.5rem; border-radius:12px; font-size:0.75rem; font-weight:600; color:#ef4444; background:rgba(239,68,68,0.15);">⚠ Low Stock</span>'
+                      : '<span style="display:inline-block; padding:0.2rem 0.5rem; border-radius:12px; font-size:0.75rem; font-weight:600; color:#10b981; background:rgba(16,185,129,0.15);">✓ OK</span>'
+                    }
+                  </td>
+                  <td style="display:flex; gap:0.25rem;">
+                    <button class="btn" style="padding:0.25rem 0.5rem; font-size:0.75rem; background:rgba(16,185,129,0.15); color:#10b981;" onclick="adjustInventory('${item.id}', '${item.item_name}', 'add')">+ Add</button>
+                    <button class="btn" style="padding:0.25rem 0.5rem; font-size:0.75rem; background:rgba(239,68,68,0.15); color:#ef4444;" onclick="adjustInventory('${item.id}', '${item.item_name}', 'remove')">- Use</button>
+                    <button class="btn-icon" style="color:var(--primary);" title="Edit Threshold" onclick="openEditInventoryModal('${item.id}', '${item.item_name}', ${parseFloat(item.current_quantity)}, '${item.unit}', ${threshold})"><i data-lucide="settings"></i></button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function openCreateInventoryModal() {
+  openModal('Add Inventory Item', `
+    <div class="form-group">
+      <label>Item Name</label>
+      <input id="modal-inv-name" class="form-control" placeholder="Sugar" required>
+    </div>
+    <div class="form-group">
+      <label>Initial Quantity</label>
+      <input id="modal-inv-qty" type="number" step="0.1" class="form-control" placeholder="50" required>
+    </div>
+    <div class="form-group">
+      <label>Unit</label>
+      <input id="modal-inv-unit" class="form-control" placeholder="kg" value="units">
+    </div>
+    <div class="form-group">
+      <label>Low Stock Threshold</label>
+      <input id="modal-inv-threshold" type="number" step="0.1" class="form-control" placeholder="5" value="5">
+    </div>
+  `, async () => {
+    const item_name = document.getElementById('modal-inv-name').value;
+    const current_quantity = parseFloat(document.getElementById('modal-inv-qty').value);
+    const unit = document.getElementById('modal-inv-unit').value;
+    const low_threshold = parseFloat(document.getElementById('modal-inv-threshold').value);
+
+    await api('/inventory', {
+      method: 'POST',
+      body: JSON.stringify({ item_name, current_quantity, unit, low_threshold }),
+    });
+    showToast('Inventory item added!');
+    renderView('inventory');
+  });
+}
+
+function adjustInventory(itemId, itemName, mode) {
+  const title = mode === 'add' ? `Add Stock: ${itemName}` : `Use Stock: ${itemName}`;
+  openModal(title, `
+    <div class="form-group">
+      <label>Quantity to ${mode === 'add' ? 'add' : 'remove'}</label>
+      <input id="modal-inv-adj" type="number" step="0.1" min="0.1" class="form-control" placeholder="10" required>
+    </div>
+  `, async () => {
+    let qty = parseFloat(document.getElementById('modal-inv-adj').value);
+    if (mode === 'remove') qty = -qty;
+
+    await api(`/inventory/${itemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ quantity_change: qty }),
+    });
+    showToast(`Stock ${mode === 'add' ? 'added' : 'used'} successfully!`);
+    renderView('inventory');
+  });
+}
+
+function openEditInventoryModal(itemId, itemName, currentQty, unit, threshold) {
+  openModal(`Edit: ${itemName}`, `
+    <div class="form-group">
+      <label>Current Quantity</label>
+      <input id="modal-inv-qty" type="number" step="0.1" class="form-control" value="${currentQty}">
+    </div>
+    <div class="form-group">
+      <label>Unit</label>
+      <input id="modal-inv-unit" class="form-control" value="${unit}">
+    </div>
+    <div class="form-group">
+      <label>Low Stock Threshold</label>
+      <input id="modal-inv-threshold" type="number" step="0.1" class="form-control" value="${threshold}">
+    </div>
+  `, async () => {
+    const current_quantity = parseFloat(document.getElementById('modal-inv-qty').value);
+    const unitVal = document.getElementById('modal-inv-unit').value;
+    const low_threshold = parseFloat(document.getElementById('modal-inv-threshold').value);
+
+    await api(`/inventory/${itemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ current_quantity, unit: unitVal, low_threshold }),
+    });
+    showToast('Inventory item updated!');
+    renderView('inventory');
+  });
+}
+
+// ============================================================
+// CUSTOMERS VIEW
+// ============================================================
 async function renderCustomersView(container) {
   const customers = await api('/customers');
   state.customers = customers;
@@ -624,10 +925,10 @@ function openCreateCustomerModal() {
   });
 }
 
-// ----------------------------------------------------
-// RESERVATIONS VIEW (PHASE 5 — Smart Conflict-Free System)
-// ----------------------------------------------------
-let reservationViewMode = 'list'; // 'list' | 'grid' | 'timeline'
+// ============================================================
+// RESERVATIONS VIEW
+// ============================================================
+let reservationViewMode = 'list';
 let reservationDateFilter = new Date().toISOString().slice(0, 10);
 
 async function renderReservationsView(container) {
@@ -680,11 +981,9 @@ async function renderReservationsView(container) {
         <button class="btn ${reservationViewMode === 'list' ? 'btn-primary' : ''}" style="padding: 0.35rem 0.7rem; font-size: 0.8rem;" onclick="reservationViewMode='list'; renderView('reservations');"><i data-lucide="list"></i> List</button>
         <button class="btn ${reservationViewMode === 'grid' ? 'btn-primary' : ''}" style="padding: 0.35rem 0.7rem; font-size: 0.8rem;" onclick="reservationViewMode='grid'; renderView('reservations');"><i data-lucide="grid-3x3"></i> Table Grid</button>
         <button class="btn ${reservationViewMode === 'timeline' ? 'btn-primary' : ''}" style="padding: 0.35rem 0.7rem; font-size: 0.8rem;" onclick="reservationViewMode='timeline'; renderView('reservations');"><i data-lucide="bar-chart-3"></i> Timeline</button>
-        <button class="btn btn-primary" style="padding: 0.35rem 0.7rem; font-size: 0.8rem;" onclick="openCreateReservationModal()"><i data-lucide="plus"></i> New Booking</button>
       </div>
     </div>
 
-    <!-- View Content -->
     <div id="reservation-view-content"></div>
   `;
 
@@ -723,7 +1022,7 @@ function renderReservationListView(container, reservations) {
                 <td><span class="badge badge-confirmed">${r.table_or_slot || 'Unassigned'}</span></td>
                 <td>${new Date(r.reserved_at).toLocaleString()}</td>
                 <td>${r.duration_minutes} min</td>
-                <td><span class="badge badge-${r.status}">${r.status}</span></td>
+                <td>${statusBadge(r.status)}</td>
                 <td>
                   <button class="btn-icon" style="color:var(--accent-rose);" title="Delete Reservation" onclick="deleteReservation('${r.id}')"><i data-lucide="trash-2"></i></button>
                 </td>
@@ -741,7 +1040,6 @@ function renderTableGridView(container, availabilityData, settings) {
     container.innerHTML = '<div class="glass-panel" style="padding: 2rem; text-align: center; color: var(--text-muted);">Loading availability data...</div>';
     return;
   }
-
   const grid = availabilityData.table_grid || [];
   container.innerHTML = `
     <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 1rem;">
@@ -749,29 +1047,25 @@ function renderTableGridView(container, availabilityData, settings) {
         const isReserved = t.status === 'reserved';
         const borderColor = isReserved ? 'rgba(239, 68, 68, 0.4)' : 'rgba(16, 185, 129, 0.4)';
         const bgColor = isReserved ? 'rgba(239, 68, 68, 0.05)' : 'rgba(16, 185, 129, 0.05)';
-        const statusLabel = isReserved ? 'Occupied' : 'Available';
-
         return `
-          <div class="glass-panel" style="padding: 1.25rem; border: 1px solid ${borderColor}; background: ${bgColor}; transition: all 0.2s ease;">
+          <div class="glass-panel" style="padding: 1.25rem; border: 1px solid ${borderColor}; background: ${bgColor};">
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
-              <h4 style="margin: 0; font-size: 1.1rem; font-weight: 600; color: var(--text-main);">${t.table_name}</h4>
-              <span class="badge badge-${isReserved ? 'cancelled' : 'confirmed'}">${statusLabel}</span>
+              <h4 style="margin: 0; font-size: 1.1rem; font-weight: 600;">${t.table_name}</h4>
+              <span style="padding:0.2rem 0.5rem; border-radius:12px; font-size:0.75rem; font-weight:600; color:${isReserved ? '#ef4444' : '#10b981'}; background:${isReserved ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)'};">${isReserved ? 'Occupied' : 'Available'}</span>
             </div>
             ${t.bookings.length > 0 ? `
               <div style="margin-top: 0.75rem; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 0.6rem;">
                 ${t.bookings.map(b => `
                   <div style="display: flex; align-items: center; justify-content: space-between; font-size: 0.825rem; padding: 0.4rem 0.6rem; background: rgba(0,0,0,0.2); border-radius: 6px; margin-bottom: 0.4rem;">
                     <div>
-                      <strong style="color: var(--text-main); display: block;">${b.customer}</strong>
+                      <strong style="display: block;">${b.customer}</strong>
                       <span style="font-size: 0.75rem; color: var(--text-subtle);">${b.party_size} guests · ${b.duration}m</span>
                     </div>
                     <span style="font-weight: 600; color: var(--accent-indigo); font-size: 0.8rem;">${b.time}</span>
                   </div>
                 `).join('')}
               </div>
-            ` : `
-              <p style="font-size: 0.8rem; color: var(--text-subtle); margin: 0.5rem 0 0;">Free all day</p>
-            `}
+            ` : `<p style="font-size: 0.8rem; color: var(--text-subtle); margin: 0.5rem 0 0;">Free all day</p>`}
           </div>
         `;
       }).join('')}
@@ -784,31 +1078,22 @@ function renderTimelineView(container, availabilityData, settings) {
     container.innerHTML = '<div class="glass-panel" style="padding: 2rem; text-align: center; color: var(--text-muted);">Loading timeline data...</div>';
     return;
   }
-
   const matrix = availabilityData.hourly_matrix || [];
   const totalTables = availabilityData.total_tables || 10;
-
   container.innerHTML = `
     <div class="glass-panel" style="padding: 1.25rem;">
-      <h4 style="margin: 0 0 1rem; font-size: 1.1rem; color: var(--text-main);">
-        Hourly Table Occupancy — ${availabilityData.date}
-      </h4>
+      <h4 style="margin: 0 0 1rem; font-size: 1.1rem;">Hourly Table Occupancy — ${availabilityData.date}</h4>
       <div style="display: flex; flex-direction: column; gap: 0.5rem;">
         ${matrix.map(slot => {
           const pct = totalTables > 0 ? ((slot.occupied / totalTables) * 100).toFixed(0) : 0;
           const isFull = slot.available === 0;
-          const barColor = isFull
-            ? 'var(--accent-rose)'
-            : pct > 60 ? 'var(--accent-amber)' : 'var(--accent-emerald)';
-
+          const barColor = isFull ? 'var(--accent-rose)' : pct > 60 ? 'var(--accent-amber)' : 'var(--accent-emerald)';
           return `
             <div style="display: flex; align-items: center; gap: 0.75rem;">
-              <div style="width: 80px; font-size: 0.85rem; font-weight: 500; color: var(--text-main); flex-shrink: 0;">${slot.hour}</div>
+              <div style="width: 80px; font-size: 0.85rem; font-weight: 500; flex-shrink: 0;">${slot.hour}</div>
               <div style="flex: 1; background: var(--card-bg); border-radius: 6px; height: 28px; overflow: hidden; position: relative; border: 1px solid var(--border);">
                 <div style="height: 100%; width: ${pct}%; background: ${barColor}; border-radius: 6px; transition: width 0.5s ease;"></div>
-                <span style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 0.75rem; font-weight: 600; color: var(--text-main);">
-                  ${slot.occupied}/${totalTables} ${isFull ? '🔴 FULL' : ''}
-                </span>
+                <span style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 0.75rem; font-weight: 600;">${slot.occupied}/${totalTables} ${isFull ? '🔴 FULL' : ''}</span>
               </div>
             </div>
           `;
@@ -869,9 +1154,9 @@ function openCreateReservationModal() {
   });
 }
 
-// ----------------------------------------------------
-// CONVERSATIONS VIEW (PHASE 6)
-// ----------------------------------------------------
+// ============================================================
+// CONVERSATIONS VIEW
+// ============================================================
 let activeThreadPhone = null;
 
 async function renderConversationsView(container) {
@@ -886,7 +1171,6 @@ async function renderConversationsView(container) {
 
   container.innerHTML = `
     <div class="chat-container">
-      <!-- Left Thread List -->
       <div class="glass-panel chat-sidebar">
         <h3 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Active Conversations</h3>
         <div class="thread-list">
@@ -906,7 +1190,6 @@ async function renderConversationsView(container) {
         </div>
       </div>
 
-      <!-- Right Chat Drawer -->
       <div class="glass-panel chat-main">
         ${selectedThread ? `
           <div class="chat-header">
@@ -942,7 +1225,6 @@ async function renderConversationsView(container) {
     </div>
   `;
 
-  // Scroll chat messages to bottom
   const msgContainer = document.getElementById('chat-messages-container');
   if (msgContainer) {
     msgContainer.scrollTop = msgContainer.scrollHeight;
@@ -955,10 +1237,10 @@ function selectChatThread(phone) {
 }
 
 async function deleteConversation(phone) {
-  if (!confirm('Are you sure you want to delete this conversation thread? This will clear all chat messages and reset the AI reservation/order flow for this number.')) return;
+  if (!confirm('Are you sure you want to delete this conversation thread?')) return;
   try {
     await api(`/conversations/${phone}`, { method: 'DELETE' });
-    showToast('Conversation thread deleted and AI context reset!');
+    showToast('Conversation thread deleted!');
     activeThreadPhone = null;
     renderView('conversations');
   } catch (err) {
@@ -966,21 +1248,29 @@ async function deleteConversation(phone) {
   }
 }
 
-// ----------------------------------------------------
-// ANALYTICS VIEW (PHASE 6)
-// ----------------------------------------------------
+// ============================================================
+// ANALYTICS VIEW — Chart.js Powered
+// ============================================================
+let chartInstances = {};
+
+function destroyCharts() {
+  Object.values(chartInstances).forEach(c => { if (c && c.destroy) c.destroy(); });
+  chartInstances = {};
+}
+
 async function renderAnalyticsView(container) {
-  const analytics = await api('/analytics/summary');
+  destroyCharts();
+
+  const [analytics, trends] = await Promise.all([
+    api('/analytics/summary'),
+    api('/analytics/trends').catch(() => ({ daily_stats: [], top_items: [], status_breakdown: {} })),
+  ]);
 
   const rev = parseFloat(analytics.total_revenue || 0);
   const totalOrders = analytics.total_orders || 0;
-  const pendingOrders = analytics.pending_orders || 0;
+  const customers = analytics.total_customers || 0;
   const totalReservations = analytics.total_reservations || 0;
   const lowStock = analytics.low_stock_items_count || 0;
-  const customers = analytics.total_customers || 0;
-
-  const completedOrders = Math.max(0, totalOrders - pendingOrders);
-  const completionRate = totalOrders > 0 ? ((completedOrders / totalOrders) * 100).toFixed(0) : 100;
 
   container.innerHTML = `
     <div class="stats-grid">
@@ -993,7 +1283,6 @@ async function renderAnalyticsView(container) {
           <div class="label">Total Revenue</div>
         </div>
       </div>
-
       <div class="glass-panel stat-card">
         <div class="stat-icon" style="background: rgba(99, 102, 241, 0.2); color: var(--primary);">
           <i data-lucide="shopping-bag"></i>
@@ -1003,7 +1292,6 @@ async function renderAnalyticsView(container) {
           <div class="label">Total Orders</div>
         </div>
       </div>
-
       <div class="glass-panel stat-card">
         <div class="stat-icon" style="background: rgba(6, 182, 212, 0.2); color: var(--accent-cyan);">
           <i data-lucide="users"></i>
@@ -1013,58 +1301,187 @@ async function renderAnalyticsView(container) {
           <div class="label">Active Customers</div>
         </div>
       </div>
-
       <div class="glass-panel stat-card">
         <div class="stat-icon" style="background: rgba(139, 92, 246, 0.2); color: var(--accent-purple);">
           <i data-lucide="calendar"></i>
         </div>
         <div class="stat-info">
           <div class="value">${totalReservations}</div>
-          <div class="label">Confirmed Reservations</div>
+          <div class="label">Reservations</div>
         </div>
       </div>
     </div>
 
+    <!-- Charts Row 1 -->
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.5rem; margin-top: 1rem;">
       <div class="glass-panel chart-card">
-        <h3>Order Fulfillment Breakdown</h3>
-        <div>
-          <div style="display:flex; justify-content:space-between; font-size:0.9rem;">
-            <span>Completed Orders (${completedOrders})</span>
-            <span>${completionRate}%</span>
-          </div>
-          <div class="progress-bar-bg">
-            <div class="progress-bar-fill" style="width: ${completionRate}%; background: linear-gradient(90deg, var(--accent-emerald), var(--accent-cyan));"></div>
-          </div>
-        </div>
-
-        <div>
-          <div style="display:flex; justify-content:space-between; font-size:0.9rem;">
-            <span>Pending Orders (${pendingOrders})</span>
-            <span>${100 - completionRate}%</span>
-          </div>
-          <div class="progress-bar-bg">
-            <div class="progress-bar-fill" style="width: ${100 - completionRate}%; background: linear-gradient(90deg, var(--accent-amber), var(--accent-rose));"></div>
-          </div>
-        </div>
+        <h3>📈 Revenue Trend (7 Days)</h3>
+        <div style="position: relative; height: 250px;"><canvas id="chart-revenue"></canvas></div>
       </div>
-
       <div class="glass-panel chart-card">
-        <h3>Inventory & Operations Health</h3>
+        <h3>📊 Orders per Day (7 Days)</h3>
+        <div style="position: relative; height: 250px;"><canvas id="chart-orders-daily"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Charts Row 2 -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.5rem; margin-top: 1.5rem;">
+      <div class="glass-panel chart-card">
+        <h3>🏆 Top Selling Items</h3>
+        <div style="position: relative; height: 250px;"><canvas id="chart-top-items"></canvas></div>
+      </div>
+      <div class="glass-panel chart-card">
+        <h3>🍩 Order Status Breakdown</h3>
+        <div style="position: relative; height: 250px; display:flex; justify-content:center;"><canvas id="chart-status" style="max-width:280px;"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Operations Health -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.5rem; margin-top: 1.5rem;">
+      <div class="glass-panel chart-card">
+        <h3>🏥 Operations Health</h3>
         <div style="display:flex; align-items:center; justify-content:space-between; padding: 0.75rem 0; border-bottom:1px solid var(--border-glass);">
           <span style="color:var(--text-muted);">Low Stock Alerts</span>
-          <span class="badge ${lowStock > 0 ? 'badge-cancelled' : 'badge-completed'}">${lowStock} items low</span>
+          <span style="padding:0.2rem 0.5rem; border-radius:12px; font-size:0.8rem; font-weight:600; color:${lowStock > 0 ? '#ef4444' : '#10b981'}; background:${lowStock > 0 ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)'};">${lowStock} items low</span>
         </div>
         <div style="display:flex; align-items:center; justify-content:space-between; padding: 0.75rem 0;">
-          <span style="color:var(--text-muted);">Primary AI Communication Channel</span>
+          <span style="color:var(--text-muted);">AI Communication Channel</span>
           <span class="badge badge-channel">Twilio WhatsApp</span>
         </div>
       </div>
     </div>
   `;
+
+  // Render Chart.js charts
+  const chartDefaults = {
+    color: '#94a3b8',
+    borderColor: 'rgba(255,255,255,0.08)',
+  };
+
+  // Revenue Trend Line Chart
+  const revCtx = document.getElementById('chart-revenue');
+  if (revCtx && trends.daily_stats.length > 0) {
+    chartInstances.revenue = new Chart(revCtx, {
+      type: 'line',
+      data: {
+        labels: trends.daily_stats.map(d => d.label),
+        datasets: [{
+          label: 'Revenue (₹)',
+          data: trends.daily_stats.map(d => d.revenue),
+          borderColor: '#10b981',
+          backgroundColor: 'rgba(16,185,129,0.1)',
+          fill: true,
+          tension: 0.4,
+          pointBackgroundColor: '#10b981',
+          pointRadius: 5,
+          pointHoverRadius: 7,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: chartDefaults.color }, grid: { color: chartDefaults.borderColor } },
+          y: { ticks: { color: chartDefaults.color, callback: v => '₹' + v }, grid: { color: chartDefaults.borderColor }, beginAtZero: true },
+        },
+      },
+    });
+  }
+
+  // Orders Bar Chart
+  const ordCtx = document.getElementById('chart-orders-daily');
+  if (ordCtx && trends.daily_stats.length > 0) {
+    chartInstances.ordersDaily = new Chart(ordCtx, {
+      type: 'bar',
+      data: {
+        labels: trends.daily_stats.map(d => d.label),
+        datasets: [{
+          label: 'Orders',
+          data: trends.daily_stats.map(d => d.orders),
+          backgroundColor: 'rgba(99,102,241,0.6)',
+          borderColor: '#6366f1',
+          borderWidth: 1,
+          borderRadius: 6,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: chartDefaults.color }, grid: { color: chartDefaults.borderColor } },
+          y: { ticks: { color: chartDefaults.color, stepSize: 1 }, grid: { color: chartDefaults.borderColor }, beginAtZero: true },
+        },
+      },
+    });
+  }
+
+  // Top Items Horizontal Bar
+  const topCtx = document.getElementById('chart-top-items');
+  if (topCtx && trends.top_items.length > 0) {
+    const colors = ['#6366f1', '#8b5cf6', '#f59e0b', '#10b981', '#06b6d4'];
+    chartInstances.topItems = new Chart(topCtx, {
+      type: 'bar',
+      data: {
+        labels: trends.top_items.map(i => i.item_name),
+        datasets: [{
+          label: 'Qty Sold',
+          data: trends.top_items.map(i => i.total_quantity),
+          backgroundColor: trends.top_items.map((_, idx) => colors[idx % colors.length] + '99'),
+          borderColor: trends.top_items.map((_, idx) => colors[idx % colors.length]),
+          borderWidth: 1,
+          borderRadius: 6,
+        }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: chartDefaults.color, stepSize: 1 }, grid: { color: chartDefaults.borderColor }, beginAtZero: true },
+          y: { ticks: { color: chartDefaults.color }, grid: { display: false } },
+        },
+      },
+    });
+  }
+
+  // Status Donut
+  const statusCtx = document.getElementById('chart-status');
+  if (statusCtx && Object.keys(trends.status_breakdown).length > 0) {
+    const statusColors = {
+      pending: '#f59e0b', pending_confirmation: '#3b82f6', confirmed: '#10b981',
+      in_preparation: '#f97316', out_for_delivery: '#8b5cf6', delivered: '#22c55e',
+      completed: '#06b6d4', cancelled: '#ef4444', draft: '#6b7280', ready: '#06b6d4',
+    };
+    const labels = Object.keys(trends.status_breakdown);
+    const data = Object.values(trends.status_breakdown);
+    chartInstances.status = new Chart(statusCtx, {
+      type: 'doughnut',
+      data: {
+        labels: labels.map(l => (STATUS_CONFIG[l]?.label || l)),
+        datasets: [{
+          data,
+          backgroundColor: labels.map(l => (statusColors[l] || '#6b7280') + 'cc'),
+          borderColor: labels.map(l => statusColors[l] || '#6b7280'),
+          borderWidth: 2,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'right', labels: { color: chartDefaults.color, padding: 12, usePointStyle: true } },
+        },
+      },
+    });
+  }
 }
 
-// Modal helper
+// ============================================================
+// MODAL HELPER
+// ============================================================
 function openModal(title, contentHtml, onSubmit) {
   const modalRoot = document.getElementById('modal-root');
   modalRoot.innerHTML = `
@@ -1101,6 +1518,9 @@ function closeModal() {
   modalRoot.classList.remove('active');
 }
 
+// ============================================================
+// DELETE HELPERS
+// ============================================================
 async function deleteOrder(id) {
   if (!confirm('Are you sure you want to delete this order?')) return;
   try {
@@ -1145,35 +1565,24 @@ async function deleteReservation(id) {
   }
 }
 
-async function updateShopTableCapacity() {
-  const countInput = document.getElementById('shop-table-count');
-  const count = parseInt(countInput ? countInput.value : 10);
-  if (isNaN(count) || count < 1) {
-    showToast('Please enter a valid table count', 'error');
-    return;
-  }
-  try {
-    await api('/business/settings', {
-      method: 'PUT',
-      body: JSON.stringify({ table_count: count }),
-    });
-    showToast(`Shop table capacity updated to ${count} tables!`);
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
-}
-
-// Global Exports
+// ============================================================
+// GLOBAL EXPORTS
+// ============================================================
 window.openCreateOrderModal = openCreateOrderModal;
 window.openCreateCatalogModal = openCreateCatalogModal;
+window.openEditCatalogModal = openEditCatalogModal;
+window.toggleCatalogAvailability = toggleCatalogAvailability;
 window.openCreateCustomerModal = openCreateCustomerModal;
 window.openCreateReservationModal = openCreateReservationModal;
+window.openCreateInventoryModal = openCreateInventoryModal;
+window.adjustInventory = adjustInventory;
+window.openEditInventoryModal = openEditInventoryModal;
 window.updateOrderStatus = updateOrderStatus;
 window.deleteOrder = deleteOrder;
 window.deleteCatalogItem = deleteCatalogItem;
 window.deleteCustomer = deleteCustomer;
 window.deleteReservation = deleteReservation;
-window.updateShopTableCapacity = updateShopTableCapacity;
+window.updateShopReservationSettings = updateShopReservationSettings;
 window.selectChatThread = selectChatThread;
 window.closeModal = closeModal;
 

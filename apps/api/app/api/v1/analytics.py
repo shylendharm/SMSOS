@@ -84,3 +84,80 @@ async def get_pending_counts(
         "new_orders": new_orders,
         "new_reservations": new_reservations,
     }
+
+
+@router.get("/analytics/trends")
+async def get_analytics_trends(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    from datetime import datetime as dt_cls, timedelta, timezone as tz_cls
+    from app.db.models.order import OrderItem
+
+    biz_id = current_user.business_id
+    now = dt_cls.now(tz_cls.utc)
+    seven_days_ago = now - timedelta(days=6)
+    start_of_period = seven_days_ago.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Daily revenue and order counts for last 7 days
+    daily_stats = []
+    for i in range(7):
+        day_start = start_of_period + timedelta(days=i)
+        day_end = day_start + timedelta(days=1)
+
+        res_count = await db.execute(
+            select(func.count(Order.id)).where(
+                Order.business_id == biz_id,
+                Order.created_at >= day_start,
+                Order.created_at < day_end,
+            )
+        )
+        day_count = res_count.scalar() or 0
+
+        res_rev = await db.execute(
+            select(func.sum(Order.total_amount)).where(
+                Order.business_id == biz_id,
+                Order.created_at >= day_start,
+                Order.created_at < day_end,
+                Order.status.in_(["confirmed", "ready", "completed", "fulfilled", "delivered"]),
+            )
+        )
+        day_revenue = float(res_rev.scalar() or 0)
+
+        daily_stats.append({
+            "date": day_start.strftime("%Y-%m-%d"),
+            "label": day_start.strftime("%a"),
+            "orders": day_count,
+            "revenue": day_revenue,
+        })
+
+    # Top 5 selling items by total quantity
+    res_top = await db.execute(
+        select(
+            OrderItem.item_name,
+            func.sum(OrderItem.quantity).label("total_qty"),
+        )
+        .join(Order, OrderItem.order_id == Order.id)
+        .where(Order.business_id == biz_id)
+        .group_by(OrderItem.item_name)
+        .order_by(func.sum(OrderItem.quantity).desc())
+        .limit(5)
+    )
+    top_items = [{"item_name": row[0], "total_quantity": int(row[1])} for row in res_top.all()]
+
+    # Order status breakdown
+    res_status = await db.execute(
+        select(
+            Order.status,
+            func.count(Order.id).label("count"),
+        )
+        .where(Order.business_id == biz_id)
+        .group_by(Order.status)
+    )
+    status_breakdown = {row[0]: int(row[1]) for row in res_status.all()}
+
+    return {
+        "daily_stats": daily_stats,
+        "top_items": top_items,
+        "status_breakdown": status_breakdown,
+    }
