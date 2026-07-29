@@ -297,7 +297,8 @@ async def process_inbound_sms_pipeline(
 
             # Check if customer explicitly wants to append vs start fresh
             body_lower = body.lower()
-            is_addition = any(w in body_lower for w in ["add", "also", "plus", "and 1", "and 2", "extra", "include"])
+            addition_keywords = ["add ", "add 1", "add 2", "add 3", "also want", "also add", "plus ", "extra ", "include "]
+            is_addition = any(w in body_lower for w in addition_keywords)
             
             # If items extracted without addition keywords and existing draft is pending_confirmation,
             # cancel previous draft and start fresh!
@@ -337,10 +338,8 @@ async def process_inbound_sms_pipeline(
                     "instead of", "change order", "remove", "just want",
                     "only want", "alone", "without", "don't want", "dont want",
                     "no more", "i just", "i only", "just 1", "just 2", "just 3",
-                ])
-                is_explicit_addition = any(w in body_lower for w in [
-                    "add", "also", "plus", "extra", "include", "another", "more", "and 1", "and 2", "and 3"
-                ])
+                ]) or not is_addition
+                is_explicit_addition = is_addition
 
                 if is_replacement:
                     await db.execute(delete(OrderItem).where(OrderItem.order_id == order.id))
@@ -351,6 +350,15 @@ async def process_inbound_sms_pipeline(
 
                 unavailable_items = []
                 invalid_items = []
+
+                # Scan raw message text for out-of-stock items as a fallback for LLM omissions
+                for c_item in catalog_items:
+                    if not c_item.is_available:
+                        c_name = c_item.name.lower()
+                        words = [w for w in c_name.split() if len(w) > 3]
+                        if c_name in body_lower or any(w in body_lower for w in words):
+                            if c_item.name not in unavailable_items:
+                                unavailable_items.append(c_item.name)
 
                 for itm in items_extracted:
                     item_name = itm.get("item_name", "Item") if isinstance(itm, dict) else str(itm)
