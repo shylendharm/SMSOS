@@ -142,6 +142,15 @@ Your task:
     - If they are ordering (PLACE_ORDER):
       - Extract ordered items and quantities.
       - Extract delivery location / hostel / room number into `delivery_location` if provided.
+      - CRITICAL TANGLISH LOCATION EXTRACTION: In Tanglish, delivery locations often follow patterns like:
+        * "X ku anupu/anupunga" = "send to X" → delivery_location = X
+        * "X ku deliver pannunga" = "deliver to X" → delivery_location = X
+        * "X block/hostel/room" = location reference → delivery_location = X block/hostel/room
+        * "ya X anupunga" = "send to X please" → delivery_location = X
+        Examples:
+          - "oru chapathi ya IMA anupunga" → items: chapathi x1, delivery_location: "IMA"
+          - "2 dosa Tinnanur ku anupu" → items: dosa x2, delivery_location: "Tinnanur"
+          - "idli venpa block ku anupunga" → items: idli x1, delivery_location: "Venpa block"
       - If the customer is replying "YES", "confirm", "ok", "aama" to confirm an order summary, set `is_order_confirmed = True`.
 """
 
