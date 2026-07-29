@@ -235,7 +235,7 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
                 "}"
             )
             payload = {
-                "model": "openrouter/free",
+                "model": "openrouter/auto",
                 "messages": [
                     {"role": "system", "content": openrouter_prompt},
                     {"role": "user", "content": message_text},
