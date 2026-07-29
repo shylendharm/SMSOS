@@ -231,10 +231,14 @@ async def process_inbound_sms_pipeline(
         if old_draft:
             old_draft.status = "cancelled"
 
-    # Check if we should process order logic (including when waiting for delivery location)
+    # Check if we should process order logic (including when waiting for delivery location or confirming)
+    is_confirming = (
+        ai_result.is_order_confirmed or 
+        (body.strip().lower() in ["yes", "confirm", "ok", "aama", "yes proceed", "ha", "confirm order", "correct"])
+    )
     is_location_pending = (conv_state.state == "ORDER_LOCATION_PENDING")
     
-    if ai_result.intent == "PLACE_ORDER" or ai_result.is_order_confirmed or is_location_pending:
+    if ai_result.intent == "PLACE_ORDER" or is_confirming or is_location_pending:
         from datetime import datetime, timezone, timedelta
         
         # Fetch existing draft / pending_confirmation order for customer
@@ -277,7 +281,7 @@ async def process_inbound_sms_pipeline(
                 deliv_loc = body.strip()
 
         # Step A: Customer confirms order ("YES", "confirm", "ok", "aama", etc.)
-        if (ai_result.is_order_confirmed or body.strip().lower() in ["yes", "confirm", "ok", "aama", "yes proceed", "ha"]) and existing_draft:
+        if is_confirming and existing_draft:
             existing_draft.status = "confirmed"
             
             # Refresh items from DB to prevent duplicate relationship caching
