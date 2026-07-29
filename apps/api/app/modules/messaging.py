@@ -335,6 +335,8 @@ async def process_inbound_sms_pipeline(
 
             if deliv_loc:
                 order.delivery_location = deliv_loc
+            elif items_extracted and not is_addition:
+                order.delivery_location = None
 
             if items_extracted:
                 from sqlalchemy import delete
