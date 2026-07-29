@@ -29,8 +29,11 @@ class OrderRepository(BaseRepository[Order]):
 
     async def list_by_business(self, business_id: uuid.UUID, status: str | None = None, offset: int = 0, limit: int = 50) -> list[Order]:
         q = select(Order).where(Order.business_id == business_id).options(selectinload(Order.items))
-        if status:
+        if status and status != "all":
             q = q.where(Order.status == status)
+        elif status != "all":
+            # By default, exclude unconfirmed draft orders from kitchen dashboard
+            q = q.where(Order.status.notin_(["draft", "pending_confirmation"]))
         q = q.order_by(Order.created_at.desc()).offset(offset).limit(limit)
         result = await self.db.execute(q)
         return list(result.scalars().all())

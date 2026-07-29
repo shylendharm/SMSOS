@@ -410,21 +410,22 @@ async def process_inbound_sms_pipeline(
 
             warnings = []
             if unavailable_items:
-                warnings.append(f"⚠️ *Out of Stock*: {', '.join(unavailable_items)} (not added)")
+                warnings.append(f"⚠️ *Out of Stock*: {', '.join(unavailable_items)} is currently out of stock and was not added to your order.")
             if invalid_items:
-                warnings.append(f"⚠️ *Not on Menu*: {', '.join(invalid_items)}")
+                warnings.append(f"⚠️ *Not Available*: {', '.join(invalid_items)} is not on our menu.")
 
-            warning_text = "\n".join(warnings) + "\n\n" if warnings else ""
+            warning_text = "\n\n".join(warnings) + "\n\n" if warnings else ""
+            added_summary = ", ".join([f"{it.quantity}x {it.item_name}" for it in all_items]) if all_items else ""
 
             if not all_items:
                 if unavailable_items or invalid_items:
-                    response_text = f"{warning_text}Sorry, we couldn't add those items to your order. Please check our menu and choose from available items!"
+                    response_text = f"{warning_text}Sorry, none of the requested items are available right now. Please check our menu to choose available items!"
                 else:
                     response_text = "What would you like to order today? Please let us know the items and quantity."
                 conv_state.state = "ORDER_PENDING"
             elif not order.delivery_location:
                 response_text = (
-                    f"{warning_text}Got your order! 📍 Please share your Delivery Location or Hostel/Building name "
+                    f"{warning_text}Got your order for *{added_summary}*! 📍 Please share your Delivery Location or Hostel/Building name "
                     f"(e.g., 'Hostel 3 Gate', 'Block B Room 102') so we can calculate your delivery ETA."
                 )
                 conv_state.state = "ORDER_LOCATION_PENDING"

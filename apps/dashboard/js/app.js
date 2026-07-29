@@ -375,18 +375,21 @@ function statusBadge(status) {
 let orderStatusFilter = 'all';
 
 async function renderOrdersView(container) {
-  const orders = await api('/orders');
+  const fetchStatus = orderStatusFilter === 'pending_confirmation' ? 'pending_confirmation' : (orderStatusFilter === 'all' ? 'all' : null);
+  const orders = await api(fetchStatus ? `/orders?status=${fetchStatus}` : '/orders');
   state.orders = orders;
 
-  const filtered = orderStatusFilter === 'all' ? orders : orders.filter(o => {
-    if (orderStatusFilter === 'active') return !['delivered', 'completed', 'cancelled'].includes(o.status);
-    if (orderStatusFilter === 'delivered') return ['delivered', 'completed'].includes(o.status);
-    return o.status === orderStatusFilter;
-  });
+  const filtered = orderStatusFilter === 'all' 
+    ? orders.filter(o => !['draft', 'pending_confirmation'].includes(o.status)) 
+    : orders.filter(o => {
+        if (orderStatusFilter === 'active') return !['delivered', 'completed', 'cancelled', 'draft', 'pending_confirmation'].includes(o.status);
+        if (orderStatusFilter === 'delivered') return ['delivered', 'completed'].includes(o.status);
+        return o.status === orderStatusFilter;
+      });
 
-  const totalOrders = orders.length;
-  const pendingCount = orders.filter((o) => !['delivered', 'completed', 'cancelled'].includes(o.status)).length;
-  const totalRevenue = orders.reduce((acc, o) => acc + (parseFloat(o.total_amount) || 0), 0);
+  const totalOrders = orders.filter(o => !['draft', 'pending_confirmation'].includes(o.status)).length;
+  const pendingCount = orders.filter((o) => !['delivered', 'completed', 'cancelled', 'draft', 'pending_confirmation'].includes(o.status)).length;
+  const totalRevenue = orders.filter(o => !['draft', 'pending_confirmation'].includes(o.status)).reduce((acc, o) => acc + (parseFloat(o.total_amount) || 0), 0);
 
   container.innerHTML = `
     <div class="stats-grid">
@@ -422,7 +425,7 @@ async function renderOrdersView(container) {
     <!-- Status Filter -->
     <div class="glass-panel" style="padding: 0.75rem 1.25rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
       <span style="font-size: 0.85rem; font-weight: 500; color: var(--text-muted); margin-right: 0.25rem;">Filter:</span>
-      ${['all', 'active', 'confirmed', 'in_preparation', 'out_for_delivery', 'delivered', 'cancelled'].map(f => {
+      ${['all', 'active', 'confirmed', 'in_preparation', 'out_for_delivery', 'delivered', 'pending_confirmation', 'cancelled'].map(f => {
         const label = f === 'all' ? 'All' : f === 'active' ? 'Active' : (STATUS_CONFIG[f]?.label || f);
         const isActive = orderStatusFilter === f;
         return `<button class="btn ${isActive ? 'btn-primary' : ''}" style="padding:0.3rem 0.7rem; font-size:0.8rem;" onclick="orderStatusFilter='${f}'; renderView('orders');">${label}</button>`;

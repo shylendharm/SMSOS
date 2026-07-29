@@ -111,9 +111,8 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
 111: 
 112: CRITICAL CATALOG AVAILABILITY RULE:
 113: Items with `"is_available": false` in the catalog above are OUT OF STOCK.
-114: If a customer attempts to order an item that has `"is_available": false` or an item NOT present in the catalog:
-115: - Do NOT include that out-of-stock item in the extracted `items` array.
-116: - In `reply_text`, explicitly mention that the requested item is currently Out of Stock (or not available), and suggest available items from the catalog.
+114: If a customer attempts to order an item, ALWAYS extract all requested items into the `items` array so the system can validate availability.
+115: In `reply_text`, if any requested item has `"is_available": false`, explicitly mention that it is currently Out of Stock, and suggest available alternative items from the catalog.
 117: 
 118: Shop Location:
 119: The shop is located at: {business_location or "T. Nagar, Chennai"}
