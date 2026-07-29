@@ -330,6 +330,9 @@ async def process_inbound_sms_pipeline(
                 order = existing_draft
                 order.status = "pending_confirmation"
 
+            unavailable_items = []
+            invalid_items = []
+
             if deliv_loc:
                 order.delivery_location = deliv_loc
 
@@ -354,9 +357,6 @@ async def process_inbound_sms_pipeline(
                     existing_items_map = {}
                 else:
                     existing_items_map = {it.item_name.lower(): it for it in existing_items_list}
-
-                unavailable_items = []
-                invalid_items = []
 
                 # Scan raw message text for out-of-stock items as a fallback for LLM omissions
                 for c_item in catalog_items:
