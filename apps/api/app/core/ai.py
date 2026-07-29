@@ -106,52 +106,58 @@ Current Time: {current_time_str}
 CRITICAL DATE RULE: You MUST convert all relative date references ('today', 'tomorrow', 'tmrw', 'next friday', etc.) into an EXACT ISO format 'YYYY-MM-DD' for `reservation_date` based on Today's date above ({now_utc.strftime("%Y-%m-%d")}).
 CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noon', etc.) into 24-hour 'HH:MM' format for `reservation_time` (e.g. '19:00').
 
-Available Business Catalog:
-{catalog_str}
-
-Shop Location:
-The shop is located at: {business_location or "T. Nagar, Chennai"}
-
-Shop Capacity:
-The shop has a total of {table_count} dining tables available for reservations.
-Each reservation slot is 90 minutes long.
-
-Current Table Availability (Live):
-{reservation_availability or "No availability data loaded yet."}
-
-Recent Conversation History:
-{history_str}
-
-Recent Orders Status Context for this Customer:
-{order_str}
-
-Your task:
-1. Detect user's primary intent:
-   - 'INQUIRY': Asking about products, prices, stock, opening hours, location.
-   - 'PLACE_ORDER': Requesting to order or buy products from catalog.
-   - 'RESERVATION': Requesting a table/appointment/booking.
-   - 'CHECK_STATUS': Asking for status of a previous order/booking.
-   - 'OTHER': Greetings, general feedback, or unclear messages.
-2. Detect language ('english', 'tamil', 'tanglish').
-3. Extract relevant entities (e.g. item_name, quantity, date, time, customer_name, order_id).
-4. Generate a polite, helpful, and concise reply in the SAME language as the customer (English, Tamil, or Tanglish).    - If they are checking order status (CHECK_STATUS), use 'Recent Orders Status Context' to inform them of the exact status of their order (e.g. order #1 is pending/ready/completed/cancelled). If there are no recent orders in the context, politely state you couldn't find any.
-    - If they are requesting a table reservation (RESERVATION):
-      - Identify if the customer has specified: (1) reservation date, (2) reservation time, (3) party size (number of members/guests), and (4) customer name (booking name).
-      - Set `is_reservation_complete = True` ONLY if all four details (date, time, party size, and customer name) are clearly specified by the customer in their message or the recent conversation history.
-      - If ANY details are missing (e.g., they said "Book 2 tables" but gave no time or name, or "Book a table today at 4:00" but gave no party size or name), set `is_reservation_complete = False` and use `reply_text` to politely ask them to specify the missing details (date, time, number of members, or booking name) in their input language (English, Tamil, or Tanglish).
-    - If they are ordering (PLACE_ORDER):
-      - Extract ordered items and quantities.
-      - Extract delivery location / hostel / room number into `delivery_location` if provided.
-      - CRITICAL TANGLISH LOCATION EXTRACTION: In Tanglish, delivery locations often follow patterns like:
-        * "X ku anupu/anupunga" = "send to X" → delivery_location = X
-        * "X ku deliver pannunga" = "deliver to X" → delivery_location = X
-        * "X block/hostel/room" = location reference → delivery_location = X block/hostel/room
-        * "ya X anupunga" = "send to X please" → delivery_location = X
-        Examples:
-          - "oru chapathi ya IMA anupunga" → items: chapathi x1, delivery_location: "IMA"
-          - "2 dosa Tinnanur ku anupu" → items: dosa x2, delivery_location: "Tinnanur"
-          - "idli venpa block ku anupunga" → items: idli x1, delivery_location: "Venpa block"
-      - If the customer is replying "YES", "confirm", "ok", "aama" to confirm an order summary, set `is_order_confirmed = True`.
+109: Business Catalog (Includes Availability Status):
+110: {catalog_str}
+111: 
+112: CRITICAL CATALOG AVAILABILITY RULE:
+113: Items with `"is_available": false` in the catalog above are OUT OF STOCK.
+114: If a customer attempts to order an item that has `"is_available": false` or an item NOT present in the catalog:
+115: - Do NOT include that out-of-stock item in the extracted `items` array.
+116: - In `reply_text`, explicitly mention that the requested item is currently Out of Stock (or not available), and suggest available items from the catalog.
+117: 
+118: Shop Location:
+119: The shop is located at: {business_location or "T. Nagar, Chennai"}
+120: 
+121: Shop Capacity:
+122: The shop has a total of {table_count} dining tables available for reservations.
+123: Each reservation slot is 90 minutes long.
+124: 
+125: Current Table Availability (Live):
+126: {reservation_availability or "No availability data loaded yet."}
+127: 
+128: Recent Conversation History:
+129: {history_str}
+130: 
+131: Recent Orders Status Context for this Customer:
+132: {order_str}
+133: 
+134: Your task:
+135: 1. Detect user's primary intent:
+136:    - 'INQUIRY': Asking about products, prices, stock, opening hours, location.
+137:    - 'PLACE_ORDER': Requesting to order or buy products from catalog.
+138:    - 'RESERVATION': Requesting a table/appointment/booking.
+139:    - 'CHECK_STATUS': Asking for status of a previous order/booking.
+140:    - 'OTHER': Greetings, general feedback, or unclear messages.
+141: 2. Detect language ('english', 'tamil', 'tanglish').
+142: 3. Extract relevant entities (e.g. item_name, quantity, date, time, customer_name, order_id).
+143: 4. Generate a polite, helpful, and concise reply in the SAME language as the customer (English, Tamil, or Tanglish).    - If they are checking order status (CHECK_STATUS), use 'Recent Orders Status Context' to inform them of the exact status of their order (e.g. order #1 is pending/ready/completed/cancelled). If there are no recent orders in the context, politely state you couldn't find any.
+144:     - If they are requesting a table reservation (RESERVATION):
+145:       - Identify if the customer has specified: (1) reservation date, (2) reservation time, (3) party size (number of members/guests), and (4) customer name (booking name).
+146:       - Set `is_reservation_complete = True` ONLY if all four details (date, time, party size, and customer name) are clearly specified by the customer in their message or the recent conversation history.
+147:       - If ANY details are missing (e.g., they said "Book 2 tables" but gave no time or name, or "Book a table today at 4:00" but gave no party size or name), set `is_reservation_complete = False` and use `reply_text` to politely ask them to specify the missing details (date, time, number of members, or booking name) in their input language (English, Tamil, or Tanglish).
+148:     - If they are ordering (PLACE_ORDER):
+149:       - Extract ONLY available ordered items and quantities.
+150:       - Extract delivery location / hostel / room number into `delivery_location` if provided.
+151:       - CRITICAL TANGLISH LOCATION EXTRACTION: In Tanglish, delivery locations often follow patterns like:
+152:         * "X ku anupu/anupunga" = "send to X" → delivery_location = X
+153:         * "X ku deliver pannunga" = "deliver to X" → delivery_location = X
+154:         * "X block/hostel/room" = location reference → delivery_location = X block/hostel/room
+155:         * "ya X anupunga" = "send to X please" → delivery_location = X
+156:         Examples:
+157:           - "oru chapathi ya IMA anupunga" → items: chapathi x1, delivery_location: "IMA"
+158:           - "2 dosa Tinnanur ku anupu" → items: dosa x2, delivery_location: "Tinnanur"
+159:           - "idli venpa block ku anupunga" → items: idli x1, delivery_location: "Venpa block"
+160:       - If the customer is replying "YES", "confirm", "ok", "aama" to confirm an order summary, set `is_order_confirmed = True`.
 """
 
         xai_key = settings.XAI_API_KEY or settings.GROK_API_KEY

@@ -102,11 +102,10 @@ async def process_inbound_sms_pipeline(
     db.add(inbound_msg)
     await db.flush()
 
-    # 5. Fetch Catalog context for AI
+    # 5. Fetch Catalog context for AI (include both available & out of stock items)
     cat_res = await db.execute(
         select(CatalogItem).where(
             CatalogItem.business_id == business.id,
-            CatalogItem.is_available == True,
         )
     )
     catalog_items = cat_res.scalars().all()
@@ -117,6 +116,7 @@ async def process_inbound_sms_pipeline(
             "price": float(item.price),
             "category": item.category,
             "description": item.description or "",
+            "is_available": item.is_available,
         }
         for item in catalog_items
     ]
@@ -349,6 +349,9 @@ async def process_inbound_sms_pipeline(
                 else:
                     existing_items_map = {it.item_name.lower(): it for it in existing_items_list}
 
+                unavailable_items = []
+                invalid_items = []
+
                 for itm in items_extracted:
                     item_name = itm.get("item_name", "Item") if isinstance(itm, dict) else str(itm)
                     qty = int(itm.get("quantity", 1)) if isinstance(itm, dict) else 1
@@ -361,8 +364,16 @@ async def process_inbound_sms_pipeline(
                             matched_catalog = c_item
                             break
 
-                    price = matched_catalog.price if matched_catalog else Decimal("10.00")
-                    clean_name = matched_catalog.name if matched_catalog else item_name
+                    if not matched_catalog:
+                        invalid_items.append(item_name)
+                        continue
+
+                    if not matched_catalog.is_available:
+                        unavailable_items.append(matched_catalog.name)
+                        continue
+
+                    price = matched_catalog.price
+                    clean_name = matched_catalog.name
 
                     if clean_name.lower() in existing_items_map:
                         existing_item = existing_items_map[clean_name.lower()]
@@ -397,9 +408,23 @@ async def process_inbound_sms_pipeline(
             eta_minutes = prep_time + travel_time
             order.estimated_delivery_minutes = eta_minutes
 
-            if not order.delivery_location:
+            warnings = []
+            if unavailable_items:
+                warnings.append(f"⚠️ *Out of Stock*: {', '.join(unavailable_items)} (not added)")
+            if invalid_items:
+                warnings.append(f"⚠️ *Not on Menu*: {', '.join(invalid_items)}")
+
+            warning_text = "\n".join(warnings) + "\n\n" if warnings else ""
+
+            if not all_items:
+                if unavailable_items or invalid_items:
+                    response_text = f"{warning_text}Sorry, we couldn't add those items to your order. Please check our menu and choose from available items!"
+                else:
+                    response_text = "What would you like to order today? Please let us know the items and quantity."
+                conv_state.state = "ORDER_PENDING"
+            elif not order.delivery_location:
                 response_text = (
-                    f"Got your order! 📍 Please share your Delivery Location or Hostel/Building name "
+                    f"{warning_text}Got your order! 📍 Please share your Delivery Location or Hostel/Building name "
                     f"(e.g., 'Hostel 3 Gate', 'Block B Room 102') so we can calculate your delivery ETA."
                 )
                 conv_state.state = "ORDER_LOCATION_PENDING"
@@ -412,7 +437,7 @@ async def process_inbound_sms_pipeline(
                 total_val = float(order.total_amount) if order.total_amount else 0.0
 
                 response_text = (
-                    f"🧾 *Order Summary (Order #{order.order_number})*\n"
+                    f"{warning_text}🧾 *Order Summary (Order #{order.order_number})*\n"
                     f"{items_block}\n"
                     f"-------------------\n"
                     f"💰 *Total Amount*: ₹{total_val:.2f}\n"
