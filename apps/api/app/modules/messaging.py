@@ -212,13 +212,11 @@ async def process_inbound_sms_pipeline(
     # 9. Execute domain actions based on intent
     response_text = ai_result.reply_text
 
-    # Pre-check: Cancel existing draft if customer wants a fresh/new order
+    # Pre-check: Explicit cancellation requested by customer
     body_lower = body.strip().lower()
-    new_order_phrases = ["new order", "fresh order", "start over", "start fresh", "start new",
-                         "cancel order", "cancel that", "nah start again", "different order",
-                         "forget that", "scrap that"]
-    wants_new_order = any(phrase in body_lower for phrase in new_order_phrases)
-    if wants_new_order:
+    explicit_cancel_phrases = ["cancel order", "cancel my order", "cancel that", "cancel it", "cancel this", "i want to cancel", "cancel badam milk", "delete order"]
+    is_explicit_cancel = any(phrase in body_lower for phrase in explicit_cancel_phrases)
+    if is_explicit_cancel:
         cancel_query = await db.execute(
             select(Order)
             .where(
@@ -233,7 +231,10 @@ async def process_inbound_sms_pipeline(
         if old_draft:
             old_draft.status = "cancelled"
 
-    if ai_result.intent == "PLACE_ORDER" or ai_result.is_order_confirmed:
+    # Check if we should process order logic (including when waiting for delivery location)
+    is_location_pending = (conv_state.state == "ORDER_LOCATION_PENDING")
+    
+    if ai_result.intent == "PLACE_ORDER" or ai_result.is_order_confirmed or is_location_pending:
         from datetime import datetime, timezone, timedelta
         
         # Fetch existing draft / pending_confirmation order for customer
@@ -250,7 +251,7 @@ async def process_inbound_sms_pipeline(
         )
         existing_draft = recent_draft_query.scalars().first()
 
-        # 1. Expire stale draft orders (> 10 minutes old)
+        # 1. Delete stale unconfirmed draft orders (> 15 minutes old) so they don't clutter DB
         if existing_draft:
             draft_time = existing_draft.__dict__.get("created_at")
             if draft_time is None:
@@ -261,12 +262,19 @@ async def process_inbound_sms_pipeline(
                 now_utc = datetime.now(timezone.utc)
                 if draft_time.tzinfo is None:
                     draft_time = draft_time.replace(tzinfo=timezone.utc)
-                if (now_utc - draft_time) > timedelta(minutes=10):
-                    existing_draft.status = "cancelled"
+                if (now_utc - draft_time) > timedelta(minutes=15):
+                    await db.delete(existing_draft)
+                    await db.flush()
                     existing_draft = None
 
         deliv_loc = ai_result.entities.get("delivery_location")
         items_extracted = ai_result.entities.get("items", [])
+
+        # Fallback: If in ORDER_LOCATION_PENDING state and customer replied with a location string (e.g. 'Tiruvallur')
+        if is_location_pending and existing_draft and not deliv_loc and not items_extracted:
+            # Clean up location string if user replied with plain text location
+            if body.strip().lower() not in ["nope", "no", "cancel"]:
+                deliv_loc = body.strip()
 
         # Step A: Customer confirms order ("YES", "confirm", "ok", "aama", etc.)
         if (ai_result.is_order_confirmed or body.strip().lower() in ["yes", "confirm", "ok", "aama", "yes proceed", "ha"]) and existing_draft:
@@ -295,17 +303,12 @@ async def process_inbound_sms_pipeline(
             from app.db.repositories.order import OrderRepository
             order_repo = OrderRepository(db)
 
-            # Check if customer explicitly wants to append vs start fresh
+            # Check if customer explicitly wants to append vs update draft in place
             body_lower = body.lower()
             addition_keywords = ["add ", "add 1", "add 2", "add 3", "also want", "also add", "plus ", "extra ", "include "]
             is_addition = any(w in body_lower for w in addition_keywords)
-            
-            # If items extracted without addition keywords and existing draft is pending_confirmation,
-            # cancel previous draft and start fresh!
-            if items_extracted and existing_draft and not is_addition and not deliv_loc:
-                existing_draft.status = "cancelled"
-                existing_draft = None
 
+            # Always reuse existing_draft for unconfirmed orders! Update items in place rather than creating new order numbers.
             if not existing_draft or existing_draft.status in ["confirmed", "cancelled"]:
                 next_num = await order_repo.get_next_order_number(business.id)
                 order = Order(
