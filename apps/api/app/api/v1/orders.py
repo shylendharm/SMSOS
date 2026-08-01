@@ -202,8 +202,10 @@ async def update_order(
                 is_whatsapp = res.scalars().first() is not None
                 to_number = f"whatsapp:{customer.phone_number}" if is_whatsapp else customer.phone_number
 
-                # Determine notification content
+                # Determine notification content & PDF receipt attachment if delivered
                 st_lower = req.status.lower()
+                media_url = None
+
                 if st_lower in ["in_preparation", "preparing"]:
                     status_msg = f"👨‍🍳 Your order #{order.order_number} is now being prepared in the kitchen!"
                 elif st_lower in ["out_for_delivery", "ready"]:
@@ -211,14 +213,53 @@ async def update_order(
                     status_msg = f"🛵 Your order #{order.order_number} is out for delivery! Driver is on the way to {loc_str}."
                 elif st_lower in ["delivered", "completed"]:
                     loc_str = order.delivery_location or "your location"
-                    status_msg = f"📦 Your order #{order.order_number} has been delivered at {loc_str}. Enjoy your meal!"
+                    status_msg = f"📦 Your order #{order.order_number} has been delivered at {loc_str}. Here is your official PDF receipt. Enjoy your meal!"
+
+                    # Generate PDF Receipt
+                    try:
+                        from app.db.models.business import Business
+                        from app.core.pdf import generate_order_receipt_pdf
+                        import httpx
+                        from app.core.config import settings
+
+                        business = await db.get(Business, order.business_id)
+                        order_full = await repo.get_by_number(order.order_number, current_user.business_id)
+                        items_list = getattr(order_full, "items", []) if order_full else []
+
+                        pdf_filename = generate_order_receipt_pdf(
+                            order=order_full or order,
+                            items=items_list,
+                            business=business,
+                            customer=customer
+                        )
+
+                        # Resolve public base URL (checking Ngrok first)
+                        public_base = settings.API_BASE_URL
+                        try:
+                            async with httpx.AsyncClient(timeout=0.5) as client:
+                                r_tunnels = await client.get("http://127.0.0.1:4040/api/tunnels")
+                                if r_tunnels.status_code == 200:
+                                    tunnels = r_tunnels.json().get("tunnels", [])
+                                    for t in tunnels:
+                                        p_url = t.get("public_url", "")
+                                        if p_url.startswith("https://") or p_url.startswith("http://"):
+                                            public_base = p_url
+                                            break
+                        except Exception:
+                            pass
+
+                        media_url = f"{public_base.rstrip('/')}/static/receipts/{pdf_filename}"
+                    except Exception as e:
+                        import structlog
+                        structlog.get_logger().error("Failed to generate PDF receipt", error=str(e))
+
                 elif st_lower == "cancelled":
                     status_msg = f"❌ Your order #{order.order_number} has been cancelled."
                 else:
                     status_msg = f"Your order #{order.order_number} status updated to: {req.status.upper()}."
 
                 # Send outbound message
-                twilio_sid = twilio_service.send_message(to_number=to_number, body=status_msg)
+                twilio_sid = twilio_service.send_message(to_number=to_number, body=status_msg, media_url=media_url)
                 
                 outbound_msg = OutboundMessage(
                     business_id=order.business_id,

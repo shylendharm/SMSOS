@@ -65,9 +65,13 @@ function loggerError(msg) {
 }
 
 function showAuthCard(type) {
-  document.getElementById('login-card').style.display = type === 'login' ? 'block' : 'none';
-  document.getElementById('signup-card').style.display = type === 'signup' ? 'block' : 'none';
-  document.getElementById('onboarding-card').style.display = type === 'onboarding' ? 'block' : 'none';
+  const setVisible = (id, visible) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = visible ? 'block' : 'none';
+  };
+  setVisible('login-card', type === 'login');
+  setVisible('signup-card', type === 'signup');
+  setVisible('onboarding-card', type === 'onboarding');
 }
 
 async function loadUserProfile() {

@@ -28,9 +28,9 @@ class TwilioService:
         
         self.validator = RequestValidator(self.auth_token) if self.auth_token else None
 
-    def send_message(self, to_number: str, body: str, from_number: Optional[str] = None) -> Optional[str]:
+    def send_message(self, to_number: str, body: str, from_number: Optional[str] = None, media_url: Optional[str] = None) -> Optional[str]:
         """
-        Sends an SMS or WhatsApp message via Twilio.
+        Sends an SMS or WhatsApp message via Twilio with optional media attachment.
         Returns the Twilio Message SID on success, None on error.
         """
         sender = from_number or self.from_number
@@ -42,16 +42,20 @@ class TwilioService:
             sender = sender.replace("whatsapp:", "")
 
         if not self.client:
-            logger.info("Twilio client mock: message sending simulated", to=to_number, body=body)
+            logger.info("Twilio client mock: message sending simulated", to=to_number, body=body, media_url=media_url)
             return "SM_MOCK_" + str(hash(to_number + body))[:16]
 
         try:
-            message = self.client.messages.create(
-                to=to_number,
-                from_=sender,
-                body=body
-            )
-            logger.info("Sent Twilio message", sid=message.sid, to=to_number)
+            kwargs = {
+                "to": to_number,
+                "from_": sender,
+                "body": body,
+            }
+            if media_url:
+                kwargs["media_url"] = [media_url]
+
+            message = self.client.messages.create(**kwargs)
+            logger.info("Sent Twilio message", sid=message.sid, to=to_number, media_url=media_url)
             return message.sid
         except Exception as e:
             logger.error("Failed to send message via Twilio", error=str(e), to=to_number)
