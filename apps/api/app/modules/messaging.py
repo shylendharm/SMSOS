@@ -238,7 +238,18 @@ async def process_inbound_sms_pipeline(
     )
     is_location_pending = (conv_state.state == "ORDER_LOCATION_PENDING")
     
-    if ai_result.intent == "PLACE_ORDER" or is_confirming or is_location_pending:
+    reorder_phrases = [
+        "repeat last order", "same order again", "order same again", "last order",
+        "repeat order", "same order", "pazhaya order", "again same", "previous order",
+        "repeat the order", "repeat previous order", "repeat the previous order",
+        "reorder", "repeat"
+    ]
+    is_reorder_request = (
+        getattr(ai_result, "is_reorder", False) or 
+        any(p in body.lower() for p in reorder_phrases)
+    )
+
+    if ai_result.intent == "PLACE_ORDER" or is_confirming or is_location_pending or is_reorder_request:
         from datetime import datetime, timezone, timedelta
         
         # Fetch existing draft / pending_confirmation order for customer
@@ -273,6 +284,29 @@ async def process_inbound_sms_pipeline(
 
         deliv_loc = ai_result.entities.get("delivery_location")
         items_extracted = ai_result.entities.get("items", [])
+
+        # Handle Quick Re-Order lookup
+        if is_reorder_request:
+            last_order_query = await db.execute(
+                select(Order)
+                .where(
+                    Order.customer_id == customer.id,
+                    Order.business_id == business.id,
+                    Order.status.in_(["confirmed", "delivered", "completed", "pending"])
+                )
+                .options(selectinload(Order.items))
+                .order_by(Order.created_at.desc())
+                .limit(1)
+            )
+            last_order = last_order_query.scalars().first()
+
+            if not last_order or not last_order.items:
+                response_text = "We couldn't find any previous orders associated with your phone number! Please tell us what you'd like to order from our menu."
+                items_extracted = []
+            else:
+                items_extracted = [{"item_name": it.item_name, "quantity": it.quantity} for it in last_order.items]
+                if not deliv_loc:
+                    deliv_loc = last_order.delivery_location
 
         # Fallback: If in ORDER_LOCATION_PENDING state and customer replied with a location string (e.g. 'Tiruvallur')
         if is_location_pending and existing_draft and not deliv_loc and not items_extracted:
@@ -420,14 +454,38 @@ async def process_inbound_sms_pipeline(
             order.total_amount = total
 
             total_items_count = sum([it.quantity for it in all_items]) if all_items else len(items_extracted)
-            prep_time = 15 if total_items_count <= 3 else 20
-            travel_time = 15
-            eta_minutes = prep_time + travel_time
+            default_prep = getattr(business, "default_prep_time_minutes", 15) or 15
+            prep_time = default_prep if total_items_count <= 3 else (default_prep + 5)
+            
+            from app.core.geo import calculate_delivery_eta
+            eta_minutes, distance_km = await calculate_delivery_eta(
+                shop_lat=getattr(business, "latitude", None),
+                shop_lon=getattr(business, "longitude", None),
+                delivery_address=order.delivery_location,
+                default_prep_time=prep_time,
+            )
             order.estimated_delivery_minutes = eta_minutes
 
             warnings = []
             if unavailable_items:
-                warnings.append(f"⚠️ *Out of Stock*: {', '.join(unavailable_items)} is currently out of stock and was not added to your order.")
+                alt_suggestions = []
+                for un_item_name in unavailable_items:
+                    un_category = None
+                    for c_item in catalog_items:
+                        if c_item.name == un_item_name:
+                            un_category = c_item.category
+                            break
+                    if un_category:
+                        alts = [
+                            f"*{item.name}* (₹{float(item.price):.2f})"
+                            for item in catalog_items
+                            if item.category == un_category and item.is_available and item.name != un_item_name
+                        ]
+                        if alts:
+                            alt_suggestions.append(f"Instead of *{un_item_name}*, try: {', '.join(alts[:2])}")
+                
+                sugg_text = "\n💡 " + "\n💡 ".join(alt_suggestions) if alt_suggestions else ""
+                warnings.append(f"⚠️ *Out of Stock*: {', '.join(unavailable_items)} is currently out of stock and was not added to your order.{sugg_text}")
             if invalid_items:
                 warnings.append(f"⚠️ *Not Available*: {', '.join(invalid_items)} is not on our menu.")
 

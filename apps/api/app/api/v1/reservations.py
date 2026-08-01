@@ -225,6 +225,8 @@ async def update_reservation(
         if conflict:
             raise ConflictError(f"Table/slot '{new_table}' is already reserved for this time slot")
 
+    old_status = res.status
+
     if req.status is not None:
         res.status = req.status
     if req.reserved_at is not None:
@@ -238,6 +240,66 @@ async def update_reservation(
 
     await db.commit()
     await db.refresh(res)
+
+    # Send WhatsApp/SMS notification to customer when status changes
+    if req.status is not None and old_status != req.status and res.customer_id:
+        from app.db.models.message import InboundMessage, OutboundMessage
+        from app.core.sms import twilio_service
+        from sqlalchemy.future import select
+
+        cust_repo = CustomerRepository(db)
+        customer = await cust_repo.get(res.customer_id)
+
+        if customer and customer.phone_number:
+            # Detect WhatsApp vs SMS
+            inbound_check = await db.execute(
+                select(InboundMessage)
+                .where(InboundMessage.from_number == f"whatsapp:{customer.phone_number}")
+                .limit(1)
+            )
+            is_whatsapp = inbound_check.scalars().first() is not None
+            to_number = f"whatsapp:{customer.phone_number}" if is_whatsapp else customer.phone_number
+
+            # Format date/time for display
+            try:
+                date_str = res.reserved_at.strftime("%d %b %Y")
+                time_str = res.reserved_at.strftime("%I:%M %p").lstrip("0")
+            except Exception:
+                date_str = str(res.reserved_at)
+                time_str = ""
+
+            table_str = res.table_or_slot or "your table"
+            party_str = f"{res.party_size} guest{'s' if res.party_size != 1 else ''}"
+
+            st_lower = req.status.lower()
+            if st_lower == "confirmed":
+                status_msg = (
+                    f"🎉 Your reservation for {party_str} on {date_str} at {time_str} "
+                    f"({table_str}) has been CONFIRMED by the venue!"
+                )
+            elif st_lower == "seated":
+                status_msg = f"🍽️ Welcome! You are now seated at {table_str}. Enjoy your meal!"
+            elif st_lower == "cancelled":
+                status_msg = f"❌ Your reservation for {date_str} at {time_str} has been CANCELLED."
+            elif st_lower == "completed":
+                status_msg = f"✨ Thank you for dining with us! Your reservation on {date_str} is completed. We hope to see you again!"
+            elif st_lower == "no_show":
+                status_msg = f"⚠️ Your reservation for {date_str} at {time_str} has been marked as No-Show."
+            else:
+                status_msg = f"Your reservation status has been updated to: {req.status.upper()}."
+
+            twilio_sid = twilio_service.send_message(to_number=to_number, body=status_msg)
+
+            outbound_msg = OutboundMessage(
+                business_id=res.business_id,
+                to_number=to_number,
+                body=status_msg,
+                message_sid=twilio_sid,
+                status="sent" if twilio_sid else "failed",
+            )
+            db.add(outbound_msg)
+            await db.commit()
+
     return format_reservation_response(res)
 
 

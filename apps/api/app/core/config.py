@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     XAI_API_KEY: str | None = None
     GROK_API_KEY: str | None = None
     OPENROUTER_API_KEY: str | None = None
+    ORS_API_KEY: str | None = None
     OWNER_PHONE_NUMBER: str = ""
 
 

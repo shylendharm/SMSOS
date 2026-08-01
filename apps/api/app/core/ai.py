@@ -32,6 +32,7 @@ class IntentResult(BaseModel):
     is_reservation_complete: bool = Field(default=False, description="True ONLY if the customer has fully specified the reservation date, time, party size, and customer name")
     delivery_location: Optional[str] = Field(default=None, description="Delivery location, hostel name, block, room number, or address specified by customer")
     is_order_confirmed: bool = Field(default=False, description="True ONLY if customer explicitly confirms/accepts an order summary by replying YES/confirm/aama/ok")
+    is_reorder: bool = Field(default=False, description="True ONLY if customer asks to repeat, reorder, or send the same order as last time")
     reply_text: str = Field(description="Drafted response to customer in their input language (English, Tamil, or Tanglish)")
 
     @property
@@ -51,6 +52,7 @@ class IntentResult(BaseModel):
             res["delivery_location"] = self.delivery_location
         res["is_reservation_complete"] = self.is_reservation_complete
         res["is_order_confirmed"] = self.is_order_confirmed
+        res["is_reorder"] = self.is_reorder
         return res
 
 
@@ -156,7 +158,8 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
 157:           - "oru chapathi ya IMA anupunga" → items: chapathi x1, delivery_location: "IMA"
 158:           - "2 dosa Tinnanur ku anupu" → items: dosa x2, delivery_location: "Tinnanur"
 159:           - "idli venpa block ku anupunga" → items: idli x1, delivery_location: "Venpa block"
-160:       - If the customer is replying "YES", "confirm", "ok", "aama" to confirm an order summary, set `is_order_confirmed = True`.
+160:       - If the customer is asking to repeat, reorder, or send the same order as last time (e.g. 'repeat last order', 'same order again', 'order same again', 'pazhaya order thirumba anupunga', 'same order', 'repeat order'), set `intent = "PLACE_ORDER"` and set `is_reorder = True`.
+       - If the customer is replying "YES", "confirm", "ok", "aama" to confirm an order summary, set `is_order_confirmed = True`.
 """
 
         xai_key = settings.XAI_API_KEY or settings.GROK_API_KEY
@@ -241,6 +244,7 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
                     {"role": "user", "content": message_text},
                 ],
                 "temperature": 0.1,
+                "max_tokens": 1000,
                 "response_format": {"type": "json_object"},
             }
             try:
@@ -248,10 +252,32 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
                     resp = await client.post("https://openrouter.ai/api/v1/chat/completions", json=payload, headers=headers)
                     if resp.status_code == 200:
                         resp_json = resp.json()
-                        content = resp_json["choices"][0]["message"]["content"]
-                        result_data = json.loads(content)
-                        logger.info("Successfully processed message with OpenRouter AI")
-                        return IntentResult(**result_data)
+                        content = resp_json["choices"][0]["message"].get("content")
+                        if content:
+                            if isinstance(content, str):
+                                content_clean = content.strip()
+                                if content_clean.startswith("```"):
+                                    content_clean = content_clean.split("```")[1]
+                                    if content_clean.startswith("json"):
+                                        content_clean = content_clean[4:]
+                                    content_clean = content_clean.strip()
+                                result_data = json.loads(content_clean)
+                            else:
+                                result_data = content
+                            
+                            if isinstance(result_data, list) and len(result_data) > 0:
+                                result_data = result_data[0]
+                            
+                            if isinstance(result_data, dict):
+                                if "intent" not in result_data:
+                                    result_data["intent"] = "PLACE_ORDER"
+                                if "reply_text" not in result_data:
+                                    result_data["reply_text"] = "Processing your request..."
+                                if "action" in result_data and "repeat" in str(result_data["action"]).lower():
+                                    result_data["is_reorder"] = True
+                                
+                                logger.info("Successfully processed message with OpenRouter AI")
+                                return IntentResult(**result_data)
                     else:
                         logger.error("OpenRouter API call failed", status_code=resp.status_code, body=resp.text)
             except Exception as e:

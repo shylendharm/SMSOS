@@ -133,41 +133,37 @@ function initAuth() {
       const name = document.getElementById('signup-name').value;
       const email = document.getElementById('signup-email').value;
       const password = document.getElementById('signup-password').value;
+      const business_name = document.getElementById('signup-biz-name').value;
+      const phone_number = document.getElementById('signup-phone').value;
+      const business_type = document.getElementById('signup-biz-type').value;
+      const location = document.getElementById('signup-location').value;
+      const default_prep_time_minutes = parseInt(document.getElementById('signup-prep-time').value) || 15;
+      const delivery_radius_km = parseFloat(document.getElementById('signup-radius').value) || 10.0;
 
       try {
-        const data = await api('/auth/signup', {
+        const data = await api('/auth/register', {
           method: 'POST',
-          body: JSON.stringify({ name, email, password }),
+          body: JSON.stringify({
+            name,
+            email,
+            password,
+            business_name,
+            phone_number,
+            business_type,
+            location,
+            default_prep_time_minutes,
+            delivery_radius_km,
+          }),
         });
         state.token = data.access_token;
         localStorage.setItem('smsos_token', state.token);
-        showToast('Account created successfully! Please complete your shop setup.');
-        showAuthCard('onboarding');
-      } catch (err) {
-        showToast(err.message || 'Signup failed.', 'error');
-      }
-    });
-  }
-
-  if (onboardingForm) {
-    onboardingForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const business_name = document.getElementById('onboard-biz-name').value;
-      const phone_number = document.getElementById('onboard-phone').value;
-      const location = document.getElementById('onboard-location').value;
-
-      try {
-        await api('/auth/onboarding', {
-          method: 'POST',
-          body: JSON.stringify({ business_name, phone_number, location }),
-        });
-        showToast('Shop profile set up successfully!');
+        showToast('Shop created & registered successfully!');
         authScreen.style.display = 'none';
         appScreen.style.display = 'flex';
         await loadUserProfile();
         initRouter();
       } catch (err) {
-        showToast(err.message || 'Onboarding failed.', 'error');
+        showToast(err.message || 'Registration failed.', 'error');
       }
     });
   }
@@ -1588,6 +1584,29 @@ window.deleteReservation = deleteReservation;
 window.updateShopReservationSettings = updateShopReservationSettings;
 window.selectChatThread = selectChatThread;
 window.closeModal = closeModal;
+
+// Start background auto-refresh every 5 seconds
+setInterval(async () => {
+  if (state.token && !document.getElementById('modal-root')?.classList.contains('active')) {
+    const mainView = document.getElementById('main-view');
+    if (mainView && state.currentRoute) {
+      try {
+        if (state.currentRoute === 'orders') {
+          await renderOrdersView(mainView);
+          lucide.createIcons();
+        } else if (state.currentRoute === 'reservations') {
+          await renderReservationsView(mainView);
+          lucide.createIcons();
+        } else if (state.currentRoute === 'conversations') {
+          await renderConversationsView(mainView);
+          lucide.createIcons();
+        }
+      } catch (err) {
+        console.error('Auto-refresh failed:', err);
+      }
+    }
+  }
+}, 5000);
 
 // Initialize on DOM load
 document.addEventListener('DOMContentLoaded', initAuth);

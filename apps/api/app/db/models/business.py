@@ -13,6 +13,10 @@ class Business(Base, UUIDPKMixin, TimestampMixin):
     timezone: Mapped[str] = mapped_column(String(50), default="UTC", nullable=False)
     locale: Mapped[str] = mapped_column(String(10), default="en", nullable=False)
     location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    latitude: Mapped[float | None] = mapped_column(nullable=True)
+    longitude: Mapped[float | None] = mapped_column(nullable=True)
+    default_prep_time_minutes: Mapped[int] = mapped_column(Integer, default=15, server_default="15", nullable=False)
+    delivery_radius_km: Mapped[float] = mapped_column(default=10.0, server_default="10.0", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     settings: Mapped["BusinessSettings"] = relationship("BusinessSettings", back_populates="business", uselist=False, cascade="all, delete-orphan")
