@@ -167,12 +167,6 @@
             <span class="nav-text">Reservations</span>
           </a>
         </li>
-        <li class="nav-item" data-route="conversations">
-          <a href="#conversations">
-            <i data-lucide="message-circle"></i>
-            <span class="nav-text">AI Conversations</span>
-          </a>
-        </li>
         <li class="nav-item" data-route="analytics">
           <a href="#analytics">
             <i data-lucide="bar-chart-3"></i>
@@ -217,7 +211,7 @@
               <button class="btn" style="width: 100%; text-align: left; justify-content: flex-start; background: transparent; color: var(--text-main); font-size: 0.875rem;" onclick="openProfileModal()">
                 <i data-lucide="user-check"></i> Edit Profile
               </button>
-              <button class="btn" style="width: 100%; text-align: left; justify-content: flex-start; background: transparent; color: var(--accent-rose); font-size: 0.875rem;" onclick="logout()">
+              <button class="btn" style="width: 100%; text-align: left; justify-content: flex-start; background: transparent; color: var(--accent-rose); font-size: 0.875rem;" onclick="confirmLogout()">
                 <i data-lucide="log-out"></i> Sign Out
               </button>
             </div>
@@ -230,6 +224,29 @@
         <!-- Rendered via JS -->
       </div>
     </main>
+    <!-- Mobile Bottom Navigation Bar -->
+    <nav class="mobile-bottom-nav">
+      <a href="#orders" class="mobile-nav-item active" data-route="orders">
+        <i data-lucide="shopping-bag"></i>
+        <span>Orders</span>
+      </a>
+      <a href="#catalog" class="mobile-nav-item" data-route="catalog">
+        <i data-lucide="book-open"></i>
+        <span>Catalog</span>
+      </a>
+      <a href="#inventory" class="mobile-nav-item" data-route="inventory">
+        <i data-lucide="package"></i>
+        <span>Stock</span>
+      </a>
+      <a href="#customers" class="mobile-nav-item" data-route="customers">
+        <i data-lucide="users"></i>
+        <span>Customers</span>
+      </a>
+      <a href="#reservations" class="mobile-nav-item" data-route="reservations">
+        <i data-lucide="calendar"></i>
+        <span>Bookings</span>
+      </a>
+    </nav>
   </div>
 
   <!-- Modal Container -->

@@ -172,7 +172,7 @@ function initAuth() {
     });
   }
 
-  document.getElementById('logout-btn').addEventListener('click', logout);
+  document.getElementById('logout-btn').addEventListener('click', confirmLogout);
 
   document.addEventListener('click', (e) => {
     const dropdown = document.getElementById('profile-dropdown-menu');
@@ -206,14 +206,14 @@ async function openProfileModal() {
       <input id="modal-prof-name" class="form-control" value="${profile?.name || ''}" required>
     </div>
     <div class="form-group">
-      <label>Email Address</label>
-      <input id="modal-prof-email" type="email" class="form-control" value="${profile?.email || ''}" required>
+      <label>Email Address <span style="font-size:0.75rem; color:var(--text-muted);">(Unchangeable)</span></label>
+      <input id="modal-prof-email" type="email" class="form-control" value="${profile?.email || ''}" disabled style="background: #f1f5f9; color: var(--text-muted); cursor: not-allowed;">
     </div>
     <div class="form-group">
-      <label>New Password (leave blank to keep current)</label>
-      <input id="modal-prof-pass" type="password" class="form-control" placeholder="••••••••">
+      <label>Password <span style="font-size:0.75rem; color:var(--text-muted);">(Unchangeable)</span></label>
+      <input id="modal-prof-pass" type="password" class="form-control" placeholder="••••••••" disabled style="background: #f1f5f9; color: var(--text-muted); cursor: not-allowed;">
     </div>
-    <hr style="border-color: var(--border); margin: 1rem 0;">
+    <hr style="border-color: var(--border-color); margin: 1rem 0;">
     <div class="form-group">
       <label>Business Name</label>
       <input id="modal-prof-biz-name" class="form-control" value="${profile?.business_name || ''}" required>
@@ -228,14 +228,11 @@ async function openProfileModal() {
     </div>
   `, async () => {
     const name = document.getElementById('modal-prof-name').value;
-    const email = document.getElementById('modal-prof-email').value;
-    const password = document.getElementById('modal-prof-pass').value;
     const business_name = document.getElementById('modal-prof-biz-name').value;
     const phone_number = document.getElementById('modal-prof-phone').value;
     const location = document.getElementById('modal-prof-location').value;
 
-    const body = { name, email, business_name, phone_number, location };
-    if (password) body.password = password;
+    const body = { name, business_name, phone_number, location };
 
     await api('/auth/profile', {
       method: 'PUT',
@@ -245,6 +242,30 @@ async function openProfileModal() {
     showToast('Profile updated successfully!');
     await loadUserProfile();
   });
+}
+
+function confirmLogout() {
+  const dropdown = document.getElementById('profile-dropdown-menu');
+  if (dropdown) dropdown.style.display = 'none';
+
+  openModal(
+    'Confirm Sign Out',
+    `
+    <div style="text-align: center; padding: 0.5rem 0 1rem;">
+      <div style="width: 52px; height: 52px; background: #fee2e2; color: var(--accent-rose); border-radius: var(--radius-full); display: inline-flex; align-items: center; justify-content: center; margin-bottom: 1rem; border: 1px solid #fecaca;">
+        <i data-lucide="log-out" style="width: 24px; height: 24px;"></i>
+      </div>
+      <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.5rem; color: var(--text-main);">Are you sure you want to sign out?</h3>
+      <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 0.5rem;">You will be logged out of your shop session and returned to the login screen.</p>
+    </div>
+    `,
+    async () => {
+      logout();
+      showToast('Signed out successfully.');
+    },
+    'Sign Out',
+    'btn-danger'
+  );
 }
 
 function logout() {
@@ -267,6 +288,15 @@ function handleRoute() {
 
   // Update sidebar active link
   document.querySelectorAll('.nav-item').forEach((item) => {
+    if (item.dataset.route === hash) {
+      item.classList.add('active');
+    } else {
+      item.classList.remove('active');
+    }
+  });
+
+  // Update mobile bottom nav active link
+  document.querySelectorAll('.mobile-nav-item').forEach((item) => {
     if (item.dataset.route === hash) {
       item.classList.add('active');
     } else {
@@ -321,13 +351,6 @@ async function renderView(route) {
         pageSubtitle.innerText = 'Table reservations and appointment slots';
         headerActions.innerHTML = `<button class="btn btn-primary" onclick="openCreateReservationModal()"><i data-lucide="plus"></i> New Reservation</button>`;
         await renderReservationsView(mainView);
-        break;
-
-      case 'conversations':
-        pageTitle.innerText = 'AI WhatsApp Conversations';
-        pageSubtitle.innerText = 'Live chat histories between AI and customers';
-        headerActions.innerHTML = ``;
-        await renderConversationsView(mainView);
         break;
 
       case 'analytics':
@@ -434,7 +457,7 @@ async function renderOrdersView(container) {
 
     <div class="glass-panel" style="padding: 1.25rem;">
       <div class="table-container">
-        <table class="data-table">
+        <table class="data-table orders-table">
           <thead>
             <tr>
               <th>Order Ref</th>
@@ -561,7 +584,7 @@ async function renderCatalogView(container) {
 
     <div class="glass-panel" style="padding: 1.25rem;">
       <div class="table-container">
-        <table class="data-table">
+        <table class="data-table catalog-table">
           <thead>
             <tr>
               <th>Item Name</th>
@@ -742,7 +765,7 @@ async function renderInventoryView(container) {
 
     <div class="glass-panel" style="padding: 1.25rem;">
       <div class="table-container">
-        <table class="data-table">
+        <table class="data-table inventory-table">
           <thead>
             <tr>
               <th>Item Name</th>
@@ -877,7 +900,7 @@ async function renderCustomersView(container) {
   container.innerHTML = `
     <div class="glass-panel" style="padding: 1.25rem;">
       <div class="table-container">
-        <table class="data-table">
+        <table class="data-table customers-table">
           <thead>
             <tr>
               <th>Name</th>
@@ -1004,7 +1027,7 @@ function renderReservationListView(container, reservations) {
   container.innerHTML = `
     <div class="glass-panel" style="padding: 1.25rem;">
       <div class="table-container">
-        <table class="data-table">
+        <table class="data-table reservations-table">
           <thead>
             <tr>
               <th>Customer</th>
@@ -1485,7 +1508,7 @@ async function renderAnalyticsView(container) {
 // ============================================================
 // MODAL HELPER
 // ============================================================
-function openModal(title, contentHtml, onSubmit) {
+function openModal(title, contentHtml, onSubmit, submitText = 'Save Changes', submitBtnClass = 'btn-primary') {
   const modalRoot = document.getElementById('modal-root');
   modalRoot.innerHTML = `
     <div class="modal-card">
@@ -1497,7 +1520,7 @@ function openModal(title, contentHtml, onSubmit) {
         ${contentHtml}
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-          <button type="submit" class="btn btn-primary">Save Changes</button>
+          <button type="submit" class="btn ${submitBtnClass}">${submitText}</button>
         </div>
       </form>
     </div>
@@ -1524,48 +1547,72 @@ function closeModal() {
 // ============================================================
 // DELETE HELPERS
 // ============================================================
+function showDeleteConfirmation(itemName, onConfirmDelete) {
+  openModal(
+    'Confirm Deletion',
+    `
+    <div style="text-align: center; padding: 0.5rem 0 1rem;">
+      <div style="width: 52px; height: 52px; background: #fee2e2; color: var(--accent-rose); border-radius: var(--radius-full); display: inline-flex; align-items: center; justify-content: center; margin-bottom: 1rem; border: 1px solid #fecaca;">
+        <i data-lucide="trash-2" style="width: 24px; height: 24px;"></i>
+      </div>
+      <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.5rem; color: var(--text-main);">Delete ${itemName}?</h3>
+      <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 0.5rem;">Are you sure you want to delete this ${itemName.toLowerCase()}? This action cannot be undone.</p>
+    </div>
+    `,
+    async () => {
+      await onConfirmDelete();
+    },
+    'Delete Permanently',
+    'btn-danger'
+  );
+}
+
 async function deleteOrder(id) {
-  if (!confirm('Are you sure you want to delete this order?')) return;
-  try {
-    await api(`/orders/${id}`, { method: 'DELETE' });
-    showToast('Order deleted successfully!');
-    renderView('orders');
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
+  showDeleteConfirmation('Order', async () => {
+    try {
+      await api(`/orders/${id}`, { method: 'DELETE' });
+      showToast('Order deleted successfully!');
+      renderView('orders');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
 }
 
 async function deleteCatalogItem(id) {
-  if (!confirm('Are you sure you want to delete this catalog item?')) return;
-  try {
-    await api(`/catalog/${id}`, { method: 'DELETE' });
-    showToast('Catalog item deleted successfully!');
-    renderView('catalog');
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
+  showDeleteConfirmation('Catalog Item', async () => {
+    try {
+      await api(`/catalog/${id}`, { method: 'DELETE' });
+      showToast('Catalog item deleted successfully!');
+      renderView('catalog');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
 }
 
 async function deleteCustomer(id) {
-  if (!confirm('Are you sure you want to delete this customer?')) return;
-  try {
-    await api(`/customers/${id}`, { method: 'DELETE' });
-    showToast('Customer deleted successfully!');
-    renderView('customers');
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
+  showDeleteConfirmation('Customer', async () => {
+    try {
+      await api(`/customers/${id}`, { method: 'DELETE' });
+      showToast('Customer deleted successfully!');
+      renderView('customers');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
 }
 
 async function deleteReservation(id) {
-  if (!confirm('Are you sure you want to delete this reservation?')) return;
-  try {
-    await api(`/reservations/${id}`, { method: 'DELETE' });
-    showToast('Reservation deleted successfully!');
-    renderView('reservations');
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
+  showDeleteConfirmation('Reservation', async () => {
+    try {
+      await api(`/reservations/${id}`, { method: 'DELETE' });
+      showToast('Reservation deleted successfully!');
+      renderView('reservations');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
 }
 
 // ============================================================
@@ -1588,6 +1635,8 @@ window.deleteReservation = deleteReservation;
 window.updateShopReservationSettings = updateShopReservationSettings;
 window.selectChatThread = selectChatThread;
 window.closeModal = closeModal;
+window.logout = logout;
+window.confirmLogout = confirmLogout;
 
 // Start background auto-refresh every 5 seconds
 setInterval(async () => {
@@ -1600,9 +1649,6 @@ setInterval(async () => {
           lucide.createIcons();
         } else if (state.currentRoute === 'reservations') {
           await renderReservationsView(mainView);
-          lucide.createIcons();
-        } else if (state.currentRoute === 'conversations') {
-          await renderConversationsView(mainView);
           lucide.createIcons();
         }
       } catch (err) {
