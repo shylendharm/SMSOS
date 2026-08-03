@@ -121,8 +121,18 @@ async def get_driving_duration_and_distance(
                     duration_sec = summary.get("duration", 0)
                     distance_m = summary.get("distance", 0)
 
-                    duration_mins = max(1, math.ceil(duration_sec / 60.0))
                     distance_km = round(distance_m / 1000.0, 2)
+                    
+                    # OpenRouteService directions often assume ideal highway speeds (e.g. 60+ km/h).
+                    # Realistic urban average speed in Indian cities is ~20-25 km/h due to traffic.
+                    # We ensure the duration is AT LEAST the time it would take at 25 km/h.
+                    realistic_urban_duration_mins = math.ceil((distance_km / 25.0) * 60.0)
+                    
+                    # We also add a small 25% traffic buffer to the raw ORS time just in case.
+                    ors_duration_mins = math.ceil((duration_sec / 60.0) * 1.25)
+                    
+                    duration_mins = max(1, ors_duration_mins, realistic_urban_duration_mins)
+                    
                     logger.info(
                         "Calculated driving route via ORS",
                         duration_mins=duration_mins,
