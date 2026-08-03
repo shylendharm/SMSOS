@@ -349,10 +349,10 @@ async def process_inbound_sms_pipeline(
                 eta_formatted = f"{raw_eta} mins"
 
             response_text = (
-                f"🎉 Order #{existing_draft.order_number} Confirmed!\n"
+                f"Order #{existing_draft.order_number} Confirmed!\n"
                 f"Your order ({item_summary}) has been sent to the kitchen.\n"
-                f"📍 Delivery to: {loc_str}\n"
-                f"⏱️ Estimated Time: ~{eta_formatted}\n"
+                f"Delivery to: {loc_str}\n"
+                f"Estimated Time: ~{eta_formatted}\n"
                 f"We will update you live when it's out for delivery!"
             )
             conv_state.state = "ORDER_CONFIRMED"
@@ -505,10 +505,10 @@ async def process_inbound_sms_pipeline(
                         if alts:
                             alt_suggestions.append(f"Instead of *{un_item_name}*, try: {', '.join(alts[:2])}")
                 
-                sugg_text = "\n💡 " + "\n💡 ".join(alt_suggestions) if alt_suggestions else ""
-                warnings.append(f"⚠️ *Out of Stock*: {', '.join(unavailable_items)} is currently out of stock and was not added to your order.{sugg_text}")
+                sugg_text = "\n- " + "\n- ".join(alt_suggestions) if alt_suggestions else ""
+                warnings.append(f"*Out of Stock*: {', '.join(unavailable_items)} is currently out of stock and was not added to your order.{sugg_text}")
             if invalid_items:
-                warnings.append(f"⚠️ *Not Available*: {', '.join(invalid_items)} is not on our menu.")
+                warnings.append(f"*Not Available*: {', '.join(invalid_items)} is not on our menu.")
 
             warning_text = "\n\n".join(warnings) + "\n\n" if warnings else ""
             added_summary = ", ".join([f"{it.quantity}x {it.item_name}" for it in all_items]) if all_items else ""
@@ -521,7 +521,7 @@ async def process_inbound_sms_pipeline(
                 conv_state.state = "ORDER_PENDING"
             elif not order.delivery_location:
                 response_text = (
-                    f"{warning_text}Got your order for *{added_summary}*! 📍 Please share your Delivery Location or Hostel/Building name "
+                    f"{warning_text}Got your order for *{added_summary}*! Please share your Delivery Location or Hostel/Building name "
                     f"(e.g., 'Hostel 3 Gate', 'Block B Room 102') so we can calculate your delivery ETA."
                 )
                 conv_state.state = "ORDER_LOCATION_PENDING"
@@ -534,12 +534,12 @@ async def process_inbound_sms_pipeline(
                 total_val = float(order.total_amount) if order.total_amount else 0.0
 
                 response_text = (
-                    f"{warning_text}🧾 *Order Summary (Order #{order.order_number})*\n"
+                    f"{warning_text}*Order Summary (Order #{order.order_number})*\n"
                     f"{items_block}\n"
                     f"-------------------\n"
-                    f"💰 *Total Amount*: ₹{total_val:.2f}\n"
-                    f"📍 *Delivery Location*: {order.delivery_location}\n"
-                    f"⏱️ *Estimated Delivery*: ~{format_eta_display(eta_minutes)}\n\n"
+                    f"*Total Amount*: ₹{total_val:.2f}\n"
+                    f"*Delivery Location*: {order.delivery_location}\n"
+                    f"*Estimated Delivery*: ~{format_eta_display(eta_minutes)}\n\n"
                     f"Reply *YES* to confirm your order!"
                 )
                 conv_state.state = "ORDER_PENDING_CONFIRMATION"
@@ -705,10 +705,10 @@ async def send_order_status_whatsapp_notification(db: AsyncSession, order_id: uu
         return
 
     status_messages = {
-        "in_preparation": f"👨‍🍳 Your order #{order.order_number} is now being prepared in the kitchen!",
-        "out_for_delivery": f"🛵 Your order #{order.order_number} is out for delivery! Driver is on the way to {order.delivery_location or 'your location'}.",
-        "delivered": f"📦 Your order #{order.order_number} has been delivered at {order.delivery_location or 'your location'}. Enjoy your meal!",
-        "cancelled": f"❌ Your order #{order.order_number} has been cancelled. Please contact us for any assistance.",
+        "in_preparation": f"Your order #{order.order_number} is now being prepared in the kitchen!",
+        "out_for_delivery": f"Your order #{order.order_number} is out for delivery! Driver is on the way to {order.delivery_location or 'your location'}.",
+        "delivered": f"Your order #{order.order_number} has been delivered at {order.delivery_location or 'your location'}. Enjoy your meal!",
+        "cancelled": f"Your order #{order.order_number} has been cancelled. Please contact us for any assistance.",
     }
 
     msg_body = status_messages.get(new_status)

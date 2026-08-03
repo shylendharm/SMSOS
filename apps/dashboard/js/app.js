@@ -492,8 +492,8 @@ async function renderOrdersView(container) {
                 <td>${(o.items || []).map((i) => `${i.quantity}x ${i.item_name}`).join(', ') || 'N/A'}</td>
                 <td>
                   ${o.delivery_location ? `
-                    <div style="font-weight:500; word-break:break-word;">📍 ${o.delivery_location}</div>
-                    ${o.estimated_delivery_minutes ? `<small style="color:var(--accent-amber); display:inline-block; margin-top:2px;">⏱️ ~${formatDeliveryEta(o.estimated_delivery_minutes)}</small>` : ''}
+                    <div style="font-weight:500; word-break:break-word;">${o.delivery_location}</div>
+                    ${o.estimated_delivery_minutes ? `<small style="color:var(--accent-amber); display:inline-block; margin-top:2px;">ETA: ~${formatDeliveryEta(o.estimated_delivery_minutes)}</small>` : ''}
                   ` : '<span style="color:var(--text-muted);">Self / Takeaway</span>'}
                 </td>
                 <td style="white-space:nowrap;"><strong>₹${parseFloat(o.total_amount || 0).toFixed(2)}</strong></td>
@@ -501,13 +501,13 @@ async function renderOrdersView(container) {
                 <td style="white-space:nowrap;">
                   <div style="display:flex; align-items:center; gap:0.4rem;">
                     ${['confirmed', 'pending', 'pending_confirmation', 'draft'].includes(o.status) ? `
-                      <button class="btn btn-primary" style="padding:0.35rem 0.7rem; font-size:0.8rem; display:inline-flex; align-items:center; gap:0.25rem;" onclick="updateOrderStatus('${o.id}', 'in_preparation')">👨‍🍳 Prep</button>
+                      <button class="btn btn-primary" style="padding:0.35rem 0.7rem; font-size:0.8rem; display:inline-flex; align-items:center; gap:0.25rem;" onclick="updateOrderStatus('${o.id}', 'in_preparation')">Prep</button>
                     ` : ''}
                     ${o.status === 'in_preparation' ? `
-                      <button class="btn btn-secondary" style="padding:0.35rem 0.7rem; font-size:0.8rem; background:rgba(139,92,246,0.15); color:#8b5cf6; border:1px solid rgba(139,92,246,0.3); display:inline-flex; align-items:center; gap:0.25rem;" onclick="updateOrderStatus('${o.id}', 'out_for_delivery')">🛵 Dispatch</button>
+                      <button class="btn btn-secondary" style="padding:0.35rem 0.7rem; font-size:0.8rem; background:rgba(139,92,246,0.15); color:#8b5cf6; border:1px solid rgba(139,92,246,0.3); display:inline-flex; align-items:center; gap:0.25rem;" onclick="updateOrderStatus('${o.id}', 'out_for_delivery')">Dispatch</button>
                     ` : ''}
                     ${o.status === 'out_for_delivery' || o.status === 'ready' ? `
-                      <button class="btn btn-secondary" style="padding:0.35rem 0.7rem; font-size:0.8rem; background:rgba(16,185,129,0.15); color:#10b981; border:1px solid rgba(16,185,129,0.3); display:inline-flex; align-items:center; gap:0.25rem;" onclick="updateOrderStatus('${o.id}', 'delivered')">📦 Delivered</button>
+                      <button class="btn btn-secondary" style="padding:0.35rem 0.7rem; font-size:0.8rem; background:rgba(16,185,129,0.15); color:#10b981; border:1px solid rgba(16,185,129,0.3); display:inline-flex; align-items:center; gap:0.25rem;" onclick="updateOrderStatus('${o.id}', 'delivered')">Delivered</button>
                     ` : ''}
                     ${!['delivered', 'completed', 'cancelled'].includes(o.status) ? `
                       <button class="btn-icon" style="color:var(--accent-amber);" title="Cancel Order" onclick="updateOrderStatus('${o.id}', 'cancelled')"><i data-lucide="x-circle"></i></button>
@@ -740,7 +740,7 @@ async function renderCatalogView(container) {
                 <td>${item.unit || 'pcs'}</td>
                 <td>
                   <button class="btn" style="padding:0.25rem 0.6rem; font-size:0.75rem; background:${item.is_available ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)'}; color:${item.is_available ? '#10b981' : '#ef4444'}; border:1px solid ${item.is_available ? '#10b98133' : '#ef444433'};" onclick="toggleCatalogAvailability('${item.id}', ${!item.is_available})">
-                    ${item.is_available ? '✓ In Stock' : '✗ Out of Stock'}
+                    ${item.is_available ? 'In Stock' : 'Out of Stock'}
                   </button>
                 </td>
                 <td style="display:flex; gap:0.25rem;">
@@ -894,7 +894,7 @@ async function renderInventoryView(container) {
       <span style="font-size: 0.85rem; font-weight: 500; color: var(--text-muted);">Filter:</span>
       <button class="btn ${!inventoryLowStockFilter ? 'btn-primary' : ''}" style="padding:0.3rem 0.7rem; font-size:0.8rem;" onclick="inventoryLowStockFilter=false; renderView('inventory');">All Items</button>
       <button class="btn ${inventoryLowStockFilter ? 'btn-primary' : ''}" style="padding:0.3rem 0.7rem; font-size:0.8rem; ${inventoryLowStockFilter ? '' : lowStockCount > 0 ? 'color:var(--accent-rose);' : ''}" onclick="inventoryLowStockFilter=true; renderView('inventory');">
-        🔴 Low Stock Only ${lowStockCount > 0 ? `(${lowStockCount})` : ''}
+        Low Stock Only ${lowStockCount > 0 ? `(${lowStockCount})` : ''}
       </button>
     </div>
 
@@ -925,8 +925,8 @@ async function renderInventoryView(container) {
                   <td>${threshold}</td>
                   <td>
                     ${isLow
-                      ? '<span style="display:inline-block; padding:0.2rem 0.5rem; border-radius:12px; font-size:0.75rem; font-weight:600; color:#ef4444; background:rgba(239,68,68,0.15);">⚠ Low Stock</span>'
-                      : '<span style="display:inline-block; padding:0.2rem 0.5rem; border-radius:12px; font-size:0.75rem; font-weight:600; color:#10b981; background:rgba(16,185,129,0.15);">✓ OK</span>'
+                      ? '<span style="display:inline-block; padding:0.2rem 0.5rem; border-radius:12px; font-size:0.75rem; font-weight:600; color:#ef4444; background:rgba(239,68,68,0.15);">Low Stock</span>'
+                      : '<span style="display:inline-block; padding:0.2rem 0.5rem; border-radius:12px; font-size:0.75rem; font-weight:600; color:#10b981; background:rgba(16,185,129,0.15);">OK</span>'
                     }
                   </td>
                   <td style="display:flex; gap:0.25rem;">
@@ -1254,7 +1254,7 @@ function renderTimelineView(container, availabilityData, settings) {
               <div style="width: 80px; font-size: 0.85rem; font-weight: 500; flex-shrink: 0;">${slot.hour}</div>
               <div style="flex: 1; background: var(--card-bg); border-radius: 6px; height: 28px; overflow: hidden; position: relative; border: 1px solid var(--border);">
                 <div style="height: 100%; width: ${pct}%; background: ${barColor}; border-radius: 6px; transition: width 0.5s ease;"></div>
-                <span style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 0.75rem; font-weight: 600;">${slot.occupied}/${totalTables} ${isFull ? '🔴 FULL' : ''}</span>
+                <span style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 0.75rem; font-weight: 600;">${slot.occupied}/${totalTables} ${isFull ? 'FULL' : ''}</span>
               </div>
             </div>
           `;
@@ -1476,11 +1476,11 @@ async function renderAnalyticsView(container) {
     <!-- Charts Row 1 -->
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.5rem; margin-top: 1rem;">
       <div class="glass-panel chart-card">
-        <h3>📈 Revenue Trend (7 Days)</h3>
+        <h3>Revenue Trend (7 Days)</h3>
         <div style="position: relative; height: 250px;"><canvas id="chart-revenue"></canvas></div>
       </div>
       <div class="glass-panel chart-card">
-        <h3>📊 Orders per Day (7 Days)</h3>
+        <h3>Orders per Day (7 Days)</h3>
         <div style="position: relative; height: 250px;"><canvas id="chart-orders-daily"></canvas></div>
       </div>
     </div>
@@ -1488,11 +1488,11 @@ async function renderAnalyticsView(container) {
     <!-- Charts Row 2 -->
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.5rem; margin-top: 1.5rem;">
       <div class="glass-panel chart-card">
-        <h3>🏆 Top Selling Items</h3>
+        <h3>Top Selling Items</h3>
         <div style="position: relative; height: 250px;"><canvas id="chart-top-items"></canvas></div>
       </div>
       <div class="glass-panel chart-card">
-        <h3>🍩 Order Status Breakdown</h3>
+        <h3>Order Status Breakdown</h3>
         <div style="position: relative; height: 250px; display:flex; justify-content:center;"><canvas id="chart-status" style="max-width:280px;"></canvas></div>
       </div>
     </div>
@@ -1500,7 +1500,7 @@ async function renderAnalyticsView(container) {
     <!-- Operations Health -->
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.5rem; margin-top: 1.5rem;">
       <div class="glass-panel chart-card">
-        <h3>🏥 Operations Health</h3>
+        <h3>Operations Health</h3>
         <div style="display:flex; align-items:center; justify-content:space-between; padding: 0.75rem 0; border-bottom:1px solid var(--border-glass);">
           <span style="color:var(--text-muted);">Low Stock Alerts</span>
           <span style="padding:0.2rem 0.5rem; border-radius:12px; font-size:0.8rem; font-weight:600; color:${lowStock > 0 ? '#ef4444' : '#10b981'}; background:${lowStock > 0 ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)'};">${lowStock} items low</span>
