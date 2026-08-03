@@ -499,20 +499,20 @@ async function renderOrdersView(container) {
                 <td style="white-space:nowrap;"><strong>₹${parseFloat(o.total_amount || 0).toFixed(2)}</strong></td>
                 <td style="white-space:nowrap;">${statusBadge(o.status)}</td>
                 <td style="white-space:nowrap;">
-                  <div style="display:flex; align-items:center; gap:0.4rem;">
+                  <div class="action-btn-group">
                     ${['confirmed', 'pending', 'pending_confirmation', 'draft'].includes(o.status) ? `
-                      <button class="btn btn-primary" style="padding:0.35rem 0.7rem; font-size:0.8rem; display:inline-flex; align-items:center; gap:0.25rem;" onclick="updateOrderStatus('${o.id}', 'in_preparation')">Prep</button>
+                      <button class="btn btn-action btn-prep" onclick="updateOrderStatus('${o.id}', 'in_preparation')">Prep</button>
                     ` : ''}
                     ${o.status === 'in_preparation' ? `
-                      <button class="btn btn-secondary" style="padding:0.35rem 0.7rem; font-size:0.8rem; background:rgba(139,92,246,0.15); color:#8b5cf6; border:1px solid rgba(139,92,246,0.3); display:inline-flex; align-items:center; gap:0.25rem;" onclick="updateOrderStatus('${o.id}', 'out_for_delivery')">Dispatch</button>
+                      <button class="btn btn-action btn-dispatch" onclick="updateOrderStatus('${o.id}', 'out_for_delivery')">Dispatch</button>
                     ` : ''}
                     ${o.status === 'out_for_delivery' || o.status === 'ready' ? `
-                      <button class="btn btn-secondary" style="padding:0.35rem 0.7rem; font-size:0.8rem; background:rgba(16,185,129,0.15); color:#10b981; border:1px solid rgba(16,185,129,0.3); display:inline-flex; align-items:center; gap:0.25rem;" onclick="updateOrderStatus('${o.id}', 'delivered')">Delivered</button>
+                      <button class="btn btn-action btn-delivered" onclick="updateOrderStatus('${o.id}', 'delivered')">Delivered</button>
                     ` : ''}
                     ${!['delivered', 'completed', 'cancelled'].includes(o.status) ? `
-                      <button class="btn-icon" style="color:var(--accent-amber);" title="Cancel Order" onclick="updateOrderStatus('${o.id}', 'cancelled')"><i data-lucide="x-circle"></i></button>
+                      <button class="btn-icon btn-cancel" title="Cancel Order" onclick="updateOrderStatus('${o.id}', 'cancelled')"><i data-lucide="x-circle"></i></button>
                     ` : ''}
-                    <button class="btn-icon" style="color:var(--accent-rose);" title="Delete Order" onclick="deleteOrder('${o.id}')"><i data-lucide="trash-2"></i></button>
+                    <button class="btn-icon btn-delete" title="Delete Order" onclick="deleteOrder('${o.id}')"><i data-lucide="trash-2"></i></button>
                   </div>
                 </td>
               </tr>
