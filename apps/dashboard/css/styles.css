@@ -361,7 +361,7 @@ table.data-table {
   width: 100%;
   border-collapse: collapse;
   text-align: left;
-  min-width: 650px; /* Force horizontal scrollbar rather than cramped squishing */
+  min-width: 750px; /* Force horizontal scrollbar rather than cramped squishing */
 }
 
 table.data-table th {
@@ -403,6 +403,7 @@ table.data-table tbody tr:hover {
   font-size: 0.775rem;
   font-weight: 600;
   text-transform: capitalize;
+  white-space: nowrap;
 }
 
 .badge-pending, .badge-pending_confirmation {

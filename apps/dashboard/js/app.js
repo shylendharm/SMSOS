@@ -473,29 +473,33 @@ async function renderOrdersView(container) {
             ${filtered.length === 0 ? '<tr><td colspan="7" style="text-align:center; padding:2rem;">No orders found</td></tr>' : ''}
             ${filtered.map((o) => `
               <tr style="${o.status === 'confirmed' ? 'background: rgba(16,185,129,0.05);' : ''}">
-                <td><strong>#${o.order_number}</strong></td>
-                <td><span class="badge badge-channel">${o.channel || 'whatsapp'}</span></td>
+                <td style="white-space:nowrap;"><strong>#${o.order_number}</strong></td>
+                <td><span class="badge badge-channel" style="white-space:nowrap; text-transform:capitalize;">${o.channel || 'whatsapp'}</span></td>
                 <td>${(o.items || []).map((i) => `${i.quantity}x ${i.item_name}`).join(', ') || 'N/A'}</td>
-                <td>
-                  ${o.delivery_location ? `<div style="font-weight:500;">📍 ${o.delivery_location}</div>` : '<span style="color:var(--text-muted);">Self / Takeaway</span>'}
-                  ${o.estimated_delivery_minutes ? `<small style="color:var(--accent-amber);">⏱️ ~${o.estimated_delivery_minutes} mins</small>` : ''}
+                <td style="white-space:nowrap;">
+                  ${o.delivery_location ? `
+                    <div style="font-weight:500;">📍 ${o.delivery_location}</div>
+                    ${o.estimated_delivery_minutes ? `<small style="color:var(--accent-amber); display:block; margin-top:2px;">⏱️ ~${o.estimated_delivery_minutes} mins</small>` : ''}
+                  ` : '<span style="color:var(--text-muted);">Self / Takeaway</span>'}
                 </td>
-                <td><strong>₹${parseFloat(o.total_amount || 0).toFixed(2)}</strong></td>
-                <td>${statusBadge(o.status)}</td>
-                <td>
-                  ${['confirmed', 'pending', 'pending_confirmation', 'draft'].includes(o.status) ? `
-                    <button class="btn btn-primary" style="padding:0.3rem 0.6rem; font-size:0.8rem;" onclick="updateOrderStatus('${o.id}', 'in_preparation')">👨‍🍳 Prep</button>
-                  ` : ''}
-                  ${o.status === 'in_preparation' ? `
-                    <button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.8rem; background:rgba(139,92,246,0.2);" onclick="updateOrderStatus('${o.id}', 'out_for_delivery')">🛵 Dispatch</button>
-                  ` : ''}
-                  ${o.status === 'out_for_delivery' || o.status === 'ready' ? `
-                    <button class="btn btn-secondary" style="padding:0.3rem 0.6rem; font-size:0.8rem; background:rgba(16,185,129,0.2);" onclick="updateOrderStatus('${o.id}', 'delivered')">📦 Delivered</button>
-                  ` : ''}
-                  ${!['delivered', 'completed', 'cancelled'].includes(o.status) ? `
-                    <button class="btn-icon" style="color:var(--accent-amber);" title="Cancel Order" onclick="updateOrderStatus('${o.id}', 'cancelled')"><i data-lucide="x-circle"></i></button>
-                  ` : ''}
-                  <button class="btn-icon" style="color:var(--accent-rose);" title="Delete Order" onclick="deleteOrder('${o.id}')"><i data-lucide="trash-2"></i></button>
+                <td style="white-space:nowrap;"><strong>₹${parseFloat(o.total_amount || 0).toFixed(2)}</strong></td>
+                <td style="white-space:nowrap;">${statusBadge(o.status)}</td>
+                <td style="white-space:nowrap;">
+                  <div style="display:flex; align-items:center; gap:0.4rem;">
+                    ${['confirmed', 'pending', 'pending_confirmation', 'draft'].includes(o.status) ? `
+                      <button class="btn btn-primary" style="padding:0.35rem 0.7rem; font-size:0.8rem; display:inline-flex; align-items:center; gap:0.25rem;" onclick="updateOrderStatus('${o.id}', 'in_preparation')">👨‍🍳 Prep</button>
+                    ` : ''}
+                    ${o.status === 'in_preparation' ? `
+                      <button class="btn btn-secondary" style="padding:0.35rem 0.7rem; font-size:0.8rem; background:rgba(139,92,246,0.15); color:#8b5cf6; border:1px solid rgba(139,92,246,0.3); display:inline-flex; align-items:center; gap:0.25rem;" onclick="updateOrderStatus('${o.id}', 'out_for_delivery')">🛵 Dispatch</button>
+                    ` : ''}
+                    ${o.status === 'out_for_delivery' || o.status === 'ready' ? `
+                      <button class="btn btn-secondary" style="padding:0.35rem 0.7rem; font-size:0.8rem; background:rgba(16,185,129,0.15); color:#10b981; border:1px solid rgba(16,185,129,0.3); display:inline-flex; align-items:center; gap:0.25rem;" onclick="updateOrderStatus('${o.id}', 'delivered')">📦 Delivered</button>
+                    ` : ''}
+                    ${!['delivered', 'completed', 'cancelled'].includes(o.status) ? `
+                      <button class="btn-icon" style="color:var(--accent-amber);" title="Cancel Order" onclick="updateOrderStatus('${o.id}', 'cancelled')"><i data-lucide="x-circle"></i></button>
+                    ` : ''}
+                    <button class="btn-icon" style="color:var(--accent-rose);" title="Delete Order" onclick="deleteOrder('${o.id}')"><i data-lucide="trash-2"></i></button>
+                  </div>
                 </td>
               </tr>
             `).join('')}
