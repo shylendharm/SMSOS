@@ -525,7 +525,7 @@ async def process_inbound_sms_pipeline(
                     f"-------------------\n"
                     f"💰 *Total Amount*: ₹{total_val:.2f}\n"
                     f"📍 *Delivery Location*: {order.delivery_location}\n"
-                    f"⏱️ *Estimated Delivery*: ~{eta_minutes} mins\n\n"
+                    f"⏱️ *Estimated Delivery*: ~{format_eta_display(eta_minutes)}\n\n"
                     f"Reply *YES* to confirm your order!"
                 )
                 conv_state.state = "ORDER_PENDING_CONFIRMATION"
