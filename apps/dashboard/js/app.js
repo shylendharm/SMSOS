@@ -388,8 +388,7 @@ const STATUS_CONFIG = {
 
 function statusBadge(status) {
   const cfg = STATUS_CONFIG[status] || { label: status, color: '#6b7280', bg: 'rgba(107,114,128,0.15)' };
-  const pulse = status === 'confirmed' ? 'animation: pulse 2s infinite;' : '';
-  return `<span style="display:inline-block; padding:0.25rem 0.65rem; border-radius:20px; font-size:0.75rem; font-weight:600; color:${cfg.color}; background:${cfg.bg}; border:1px solid ${cfg.color}22; ${pulse}">${cfg.label}</span>`;
+  return `<span style="display:inline-block; padding:0.25rem 0.65rem; border-radius:20px; font-size:0.75rem; font-weight:600; color:${cfg.color}; background:${cfg.bg}; border:1px solid ${cfg.color}22;">${cfg.label}</span>`;
 }
 
 function formatDeliveryEta(minutes) {
@@ -491,10 +490,10 @@ async function renderOrdersView(container) {
                 <td style="white-space:nowrap;"><strong>#${o.order_number}</strong></td>
                 <td><span class="badge badge-channel" style="white-space:nowrap; text-transform:capitalize;">${o.channel || 'whatsapp'}</span></td>
                 <td>${(o.items || []).map((i) => `${i.quantity}x ${i.item_name}`).join(', ') || 'N/A'}</td>
-                <td style="white-space:nowrap;">
+                <td>
                   ${o.delivery_location ? `
-                    <div style="font-weight:500;">📍 ${o.delivery_location}</div>
-                    ${o.estimated_delivery_minutes ? `<small style="color:var(--accent-amber); display:block; margin-top:2px;">⏱️ ~${formatDeliveryEta(o.estimated_delivery_minutes)}</small>` : ''}
+                    <div style="font-weight:500; word-break:break-word;">📍 ${o.delivery_location}</div>
+                    ${o.estimated_delivery_minutes ? `<small style="color:var(--accent-amber); display:inline-block; margin-top:2px;">⏱️ ~${formatDeliveryEta(o.estimated_delivery_minutes)}</small>` : ''}
                   ` : '<span style="color:var(--text-muted);">Self / Takeaway</span>'}
                 </td>
                 <td style="white-space:nowrap;"><strong>₹${parseFloat(o.total_amount || 0).toFixed(2)}</strong></td>
