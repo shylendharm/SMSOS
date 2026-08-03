@@ -210,6 +210,26 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
             except Exception as e:
                 logger.error("Grok API exception", error=str(e))
 
+        # 1. Try Gemini API (Primary)
+        if self.client:
+            try:
+                response = self.client.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=message_text,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_instruction,
+                        response_mime_type="application/json",
+                        response_schema=IntentResult,
+                        temperature=0.2,
+                    ),
+                )
+                if response.text:
+                    result_data = json.loads(response.text)
+                    return IntentResult(**result_data)
+            except Exception as e:
+                logger.warning("Primary Gemini API call failed (e.g. rate limit), falling back to OpenRouter/Grok", error=str(e))
+
+        # 2. Try OpenRouter AI (Secondary Fallback)
         openrouter_key = settings.OPENROUTER_API_KEY
         if openrouter_key:
             import httpx
@@ -276,54 +296,55 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
                                 if "action" in result_data and "repeat" in str(result_data["action"]).lower():
                                     result_data["is_reorder"] = True
                                 
-                                logger.info("Successfully processed message with OpenRouter AI")
+                                logger.info("Successfully processed message with OpenRouter AI fallback")
                                 return IntentResult(**result_data)
                     else:
                         logger.error("OpenRouter API call failed", status_code=resp.status_code, body=resp.text)
             except Exception as e:
                 logger.error("OpenRouter API exception", error=str(e))
 
-        if self.client:
-            try:
-                # Fallback to Gemini if configured
-                response = self.client.models.generate_content(
-                    model="gemini-2.0-flash",
-                    contents=message_text,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_instruction,
-                        response_mime_type="application/json",
-                        response_schema=IntentResult,
-                        temperature=0.2,
-                    ),
-                )
+        # 3. Smart Offline Fallback (If all APIs fail or rate-limit)
+        return self._fallback_response(message_text, catalog_context)
 
-                if response.text:
-                    result_data = json.loads(response.text)
-                    return IntentResult(**result_data)
-            except Exception as e:
-                logger.error("Gemini API call failed", error=str(e))
-                return self._fallback_response(message_text)
-
-        return self._fallback_response(message_text)
-
-    def _fallback_response(self, message_text: str) -> IntentResult:
+    def _fallback_response(
+        self,
+        message_text: str,
+        catalog_context: Optional[List[Dict[str, Any]]] = None
+    ) -> IntentResult:
         text_lower = message_text.lower()
-        if any(w in text_lower for w in ["buy", "order", "vaanga", "venum"]):
-            intent = "PLACE_ORDER"
-        elif any(w in text_lower for w in ["book", "table", "reserve"]):
+        is_food_inquiry = any(w in text_lower for w in ["enna irukku", "menu", "food", "items", "kitta", "list", "saapada"])
+        is_order_intent = any(w in text_lower for w in ["buy", "order", "vaanga", "venum", "pannanum", "dosa", "idli", "biryani", "rice", "coffee", "tea"])
+        is_reservation = any(w in text_lower for w in ["book", "table", "reserve", "slot"])
+        is_status = any(w in text_lower for w in ["status", "where is", "track", "dispatch"])
+
+        if is_food_inquiry or is_order_intent:
+            intent = "INQUIRY" if is_food_inquiry and not is_order_intent else "PLACE_ORDER"
+            if catalog_context:
+                avail = [f"• {c.get('name', '')} (₹{float(c.get('price', 0)):.2f})" for c in catalog_context if c.get('is_available', True)]
+                if avail:
+                    menu_list = "\n".join(avail[:5])
+                    reply = f"Here is our menu:\n{menu_list}\n\nPlease reply with the item name and quantity to place your order!"
+                else:
+                    reply = "Welcome! What would you like to order today? Please tell us the item name and quantity."
+            else:
+                reply = "Welcome! What food items would you like to order today? Please let us know the item name and quantity."
+        elif is_reservation:
             intent = "RESERVATION"
-        elif any(w in text_lower for w in ["status", "where is"]):
+            reply = "We'd be happy to reserve a table for you! Please tell us the date, time, party size, and your name."
+        elif is_status:
             intent = "CHECK_STATUS"
+            reply = "Please share your Order Number (e.g. #1) so we can check your order status for you."
         else:
             intent = "INQUIRY"
+            reply = "Welcome! How can we assist you today? You can place an order or book a table with us."
 
         return IntentResult(
             intent=intent,
-            confidence=0.5,
-            language="english",
+            confidence=0.7,
+            language="tanglish" if any(w in text_lower for w in ["enna", "irukku", "kitta", "pannanum", "venum"]) else "english",
             items=[],
             party_size=None,
-            reply_text="Thank you for reaching out! We received your message and will update you shortly.",
+            reply_text=reply,
         )
 
 
