@@ -520,41 +520,158 @@ async function updateOrderStatus(orderId, status) {
 }
 
 function openCreateOrderModal() {
+  const catalog = state.catalog || [];
+  const datalistOptions = catalog.map(c => `<option value="${c.name}">₹${parseFloat(c.price).toFixed(2)}</option>`).join('');
+
   openModal('Create Manual Order', `
-    <div class="form-group">
-      <label>Customer Name</label>
-      <input id="modal-order-name" class="form-control" placeholder="e.g. Anand" required>
-    </div>
-    <div class="form-group">
-      <label>Phone Number</label>
-      <input id="modal-order-phone" class="form-control" placeholder="+919876543210" required>
-    </div>
-    <div class="form-group">
-      <label>Item Name</label>
-      <input id="modal-order-item" class="form-control" placeholder="e.g. Masala Dosa" required>
-    </div>
-    <div class="form-group">
-      <label>Unit Price (₹)</label>
-      <input id="modal-order-price" type="number" class="form-control" placeholder="80" required>
+    <datalist id="catalog-items-datalist">
+      ${datalistOptions}
+    </datalist>
+
+    <div style="display: flex; flex-direction: column; gap: 1rem;">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+        <div class="form-group" style="margin: 0;">
+          <label style="font-size: 0.85rem; font-weight: 600;">Customer Name</label>
+          <input id="modal-order-name" class="form-control" placeholder="e.g. Anand" required>
+        </div>
+        <div class="form-group" style="margin: 0;">
+          <label style="font-size: 0.85rem; font-weight: 600;">Phone Number</label>
+          <input id="modal-order-phone" class="form-control" placeholder="+919876543210" required>
+        </div>
+      </div>
+
+      <div class="form-group" style="margin: 0;">
+        <label style="font-size: 0.85rem; font-weight: 600;">Delivery Address / Location (Optional)</label>
+        <input id="modal-order-location" class="form-control" placeholder="e.g. Table 4 or Door Address">
+      </div>
+
+      <hr style="border-color: var(--border-color); margin: 0.25rem 0;">
+
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <label style="font-weight: 700; font-size: 0.9rem; color: var(--text-main);">Order Items</label>
+          <button type="button" class="btn btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.775rem;" onclick="addManualOrderItemRow()">
+            <i data-lucide="plus" style="width: 14px; height: 14px;"></i> Add Item
+          </button>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 32px; gap: 0.5rem; margin-bottom: 0.35rem; font-size: 0.75rem; font-weight: 600; color: var(--text-muted);">
+          <div>Item Name</div>
+          <div>Qty</div>
+          <div>Price (₹)</div>
+          <div></div>
+        </div>
+
+        <div id="modal-order-items-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
+          <!-- Item rows inserted here -->
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-page); padding: 0.75rem 1rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); margin-top: 0.5rem;">
+        <span style="font-weight: 600; font-size: 0.9rem; color: var(--text-muted);">Estimated Total:</span>
+        <span id="modal-order-total-display" style="font-size: 1.15rem; font-weight: 800; color: var(--primary);">₹0.00</span>
+      </div>
     </div>
   `, async () => {
-    const customer_name = document.getElementById('modal-order-name').value;
-    const customer_phone = document.getElementById('modal-order-phone').value;
-    const item_name = document.getElementById('modal-order-item').value;
-    const unit_price = parseFloat(document.getElementById('modal-order-price').value);
+    const customer_name = document.getElementById('modal-order-name').value.trim();
+    const customer_phone = document.getElementById('modal-order-phone').value.trim();
+    const delivery_location = document.getElementById('modal-order-location').value.trim();
+
+    const rowElements = document.querySelectorAll('.manual-order-item-row');
+    const items = [];
+
+    rowElements.forEach(row => {
+      const item_name = row.querySelector('.order-item-name').value.trim();
+      const quantity = parseInt(row.querySelector('.order-item-qty').value) || 1;
+      const unit_price = parseFloat(row.querySelector('.order-item-price').value) || 0;
+
+      if (item_name) {
+        items.push({ item_name, quantity, unit_price });
+      }
+    });
+
+    if (items.length === 0) {
+      showToast('Please add at least one valid item to the order!', 'error');
+      return;
+    }
 
     await api('/orders', {
       method: 'POST',
       body: JSON.stringify({
         customer_name,
         customer_phone,
-        items: [{ item_name, quantity: 1, unit_price }],
+        delivery_location,
+        items,
       }),
     });
     showToast('Order created successfully!');
     renderView('orders');
   });
+
+  // Automatically insert initial item row
+  addManualOrderItemRow();
 }
+
+window.addManualOrderItemRow = function(name = '', qty = 1, price = '') {
+  const container = document.getElementById('modal-order-items-list');
+  if (!container) return;
+
+  const row = document.createElement('div');
+  row.className = 'manual-order-item-row';
+  row.style.cssText = 'display: grid; grid-template-columns: 2fr 1fr 1fr 32px; gap: 0.5rem; align-items: center;';
+
+  row.innerHTML = `
+    <input class="form-control order-item-name" list="catalog-items-datalist" placeholder="e.g. Masala Dosa" value="${name}" oninput="onManualItemNameChange(this)" required>
+    <input type="number" min="1" class="form-control order-item-qty" value="${qty}" oninput="updateManualOrderTotal()" required>
+    <input type="number" step="0.01" min="0" class="form-control order-item-price" placeholder="0" value="${price}" oninput="updateManualOrderTotal()" required>
+    <button type="button" class="btn-icon" style="color: var(--accent-rose); height: 34px;" onclick="removeManualOrderItemRow(this)" title="Remove Item">
+      <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i>
+    </button>
+  `;
+
+  container.appendChild(row);
+  if (window.lucide) lucide.createIcons();
+  updateManualOrderTotal();
+};
+
+window.removeManualOrderItemRow = function(btn) {
+  const container = document.getElementById('modal-order-items-list');
+  if (!container) return;
+  if (container.children.length <= 1) {
+    showToast('An order must have at least one item.', 'error');
+    return;
+  }
+  btn.closest('.manual-order-item-row').remove();
+  updateManualOrderTotal();
+};
+
+window.onManualItemNameChange = function(input) {
+  const val = input.value.trim().toLowerCase();
+  const catalog = state.catalog || [];
+  const found = catalog.find(c => c.name.toLowerCase() === val);
+  if (found) {
+    const row = input.closest('.manual-order-item-row');
+    const priceInput = row.querySelector('.order-item-price');
+    if (priceInput && (!priceInput.value || parseFloat(priceInput.value) === 0)) {
+      priceInput.value = found.price;
+    }
+  }
+  updateManualOrderTotal();
+};
+
+window.updateManualOrderTotal = function() {
+  const rows = document.querySelectorAll('.manual-order-item-row');
+  let total = 0;
+  rows.forEach(row => {
+    const qty = parseFloat(row.querySelector('.order-item-qty')?.value) || 0;
+    const price = parseFloat(row.querySelector('.order-item-price')?.value) || 0;
+    total += qty * price;
+  });
+  const display = document.getElementById('modal-order-total-display');
+  if (display) {
+    display.innerText = `₹${total.toFixed(2)}`;
+  }
+};
 
 // ============================================================
 // CATALOG VIEW — Edit + Availability Toggle + Category Filter
