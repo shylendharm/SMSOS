@@ -392,6 +392,21 @@ function statusBadge(status) {
   return `<span style="display:inline-block; padding:0.25rem 0.65rem; border-radius:20px; font-size:0.75rem; font-weight:600; color:${cfg.color}; background:${cfg.bg}; border:1px solid ${cfg.color}22; ${pulse}">${cfg.label}</span>`;
 }
 
+function formatDeliveryEta(minutes) {
+  if (!minutes || minutes <= 0) return '';
+  const mins = parseInt(minutes);
+  if (mins < 60) {
+    return `${mins} mins`;
+  }
+  const hours = Math.floor(mins / 60);
+  const rem = mins % 60;
+  const unit = hours === 1 ? 'hr' : 'hrs';
+  if (rem === 0) {
+    return `${hours} ${unit}`;
+  }
+  return `${hours} ${unit} ${rem} mins`;
+}
+
 // ============================================================
 // ORDERS VIEW
 // ============================================================
@@ -479,7 +494,7 @@ async function renderOrdersView(container) {
                 <td style="white-space:nowrap;">
                   ${o.delivery_location ? `
                     <div style="font-weight:500;">📍 ${o.delivery_location}</div>
-                    ${o.estimated_delivery_minutes ? `<small style="color:var(--accent-amber); display:block; margin-top:2px;">⏱️ ~${o.estimated_delivery_minutes} mins</small>` : ''}
+                    ${o.estimated_delivery_minutes ? `<small style="color:var(--accent-amber); display:block; margin-top:2px;">⏱️ ~${formatDeliveryEta(o.estimated_delivery_minutes)}</small>` : ''}
                   ` : '<span style="color:var(--text-muted);">Self / Takeaway</span>'}
                 </td>
                 <td style="white-space:nowrap;"><strong>₹${parseFloat(o.total_amount || 0).toFixed(2)}</strong></td>

@@ -325,13 +325,20 @@ async def process_inbound_sms_pipeline(
 
             item_summary = ", ".join([f"{it.quantity}x {it.item_name}" for it in fresh_items]) if fresh_items else "your items"
             loc_str = existing_draft.delivery_location or "your location"
-            eta_str = existing_draft.estimated_delivery_minutes or 30
+            raw_eta = existing_draft.estimated_delivery_minutes or 30
+            if raw_eta >= 60:
+                hours = raw_eta // 60
+                rem = raw_eta % 60
+                unit = "hr" if hours == 1 else "hrs"
+                eta_formatted = f"{hours} {unit}" if rem == 0 else f"{hours} {unit} {rem} mins"
+            else:
+                eta_formatted = f"{raw_eta} mins"
 
             response_text = (
                 f"🎉 Order #{existing_draft.order_number} Confirmed!\n"
                 f"Your order ({item_summary}) has been sent to the kitchen.\n"
                 f"📍 Delivery to: {loc_str}\n"
-                f"⏱️ Estimated Time: ~{eta_str} mins\n"
+                f"⏱️ Estimated Time: ~{eta_formatted}\n"
                 f"We will update you live when it's out for delivery!"
             )
             conv_state.state = "ORDER_CONFIRMED"
