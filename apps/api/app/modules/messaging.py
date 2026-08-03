@@ -19,6 +19,20 @@ from app.db.models.webhook import WebhookEvent, IntentPrediction
 logger = structlog.get_logger()
 
 
+def format_eta_display(minutes: Optional[int]) -> str:
+    if not minutes or minutes <= 0:
+        return "30 mins"
+    mins = int(minutes)
+    if mins < 60:
+        return f"{mins} mins"
+    hours = mins // 60
+    rem = mins % 60
+    unit = "hr" if hours == 1 else "hrs"
+    if rem == 0:
+        return f"{hours} {unit}"
+    return f"{hours} {unit} {rem} mins"
+
+
 async def process_inbound_sms_pipeline(
     db: AsyncSession,
     payload: Dict[str, Any]
