@@ -320,10 +320,22 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
         if is_food_inquiry or is_order_intent:
             intent = "INQUIRY" if is_food_inquiry and not is_order_intent else "PLACE_ORDER"
             if catalog_context:
-                avail = [f"• {c.get('name', '')} (₹{float(c.get('price', 0)):.2f})" for c in catalog_context if c.get('is_available', True)]
-                if avail:
-                    menu_list = "\n".join(avail[:5])
-                    reply = f"Here is our menu:\n{menu_list}\n\nPlease reply with the item name and quantity to place your order!"
+                available_items = [c for c in catalog_context if c.get('is_available', True)]
+                if available_items:
+                    categories: Dict[str, List[str]] = {}
+                    for item in available_items:
+                        cat_name = item.get('category') or 'General'
+                        if cat_name not in categories:
+                            categories[cat_name] = []
+                        price_val = float(item.get('price', 0))
+                        categories[cat_name].append(f"• {item.get('name', '')} (₹{price_val:.2f})")
+                    
+                    category_blocks = []
+                    for cat_name, item_strs in categories.items():
+                        category_blocks.append(f"*{cat_name}*:\n" + "\n".join(item_strs))
+                    
+                    full_menu_str = "\n\n".join(category_blocks)
+                    reply = f"Here is our complete menu:\n\n{full_menu_str}\n\nPlease reply with the item name and quantity to place your order!"
                 else:
                     reply = "Welcome! What would you like to order today? Please tell us the item name and quantity."
             else:
