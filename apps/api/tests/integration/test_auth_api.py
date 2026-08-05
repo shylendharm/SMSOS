@@ -86,3 +86,62 @@ async def test_register_flow(test_engine):
         assert prof["phone_number"] == "+919998887770"
         assert prof["location"] == "T. Nagar, Chennai"
 
+
+@pytest.mark.asyncio
+async def test_google_auth_flow(test_engine, monkeypatch):
+    # Mock firebase token verification
+    async def mock_verify_firebase_token(id_token):
+        if id_token == "valid_token":
+            return {
+                "uid": "google-uid-123",
+                "email": "googleuser@example.com",
+                "name": "Google User",
+                "email_verified": True,
+            }
+        return None
+
+    monkeypatch.setattr("app.core.firebase.verify_firebase_token", mock_verify_firebase_token)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        # Test Invalid Token
+        resp = await ac.post("/api/v1/auth/google", json={"id_token": "invalid"})
+        assert resp.status_code == 401
+        assert "Invalid or expired Google" in resp.json()["error"]["message"]
+
+        # Test Valid Token — Sign Up (New User)
+        resp = await ac.post("/api/v1/auth/google", json={"id_token": "valid_token"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "access_token" in data
+        assert data["role"] == "owner"
+        assert data["needs_onboarding"] is True
+        token = data["access_token"]
+
+        # Check that user can onboarding
+        headers = {"Authorization": f"Bearer {token}"}
+        onboarding_resp = await ac.post(
+            "/api/v1/auth/onboarding",
+            headers=headers,
+            json={
+                "business_name": "Google Shop",
+                "phone_number": "+919998887777",
+                "location": "Velachery, Chennai",
+            }
+        )
+        assert onboarding_resp.status_code == 200
+
+        # Login again (Existing User)
+        resp2 = await ac.post("/api/v1/auth/google", json={"id_token": "valid_token"})
+        assert resp2.status_code == 200
+        data2 = resp2.json()
+        assert data2["needs_onboarding"] is False
+
+        # Guard Test: Check that email/password login is rejected for Google-only users
+        resp3 = await ac.post(
+            "/api/v1/auth/login",
+            json={"email": "googleuser@example.com", "password": "AnyPassword123!"}
+        )
+        assert resp3.status_code == 401
+        assert "uses Google Sign-In" in resp3.json()["error"]["message"]
+
+
