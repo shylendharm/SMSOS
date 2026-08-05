@@ -58,7 +58,7 @@ async def verify_firebase_token(id_token: str) -> Optional[Dict[str, Any]]:
     try:
         from firebase_admin import auth
 
-        decoded_token = auth.verify_id_token(id_token)
+        decoded_token = auth.verify_id_token(id_token, clock_skew_seconds=60)
         logger.info(
             "Firebase token verified successfully",
             uid=decoded_token.get("uid"),
