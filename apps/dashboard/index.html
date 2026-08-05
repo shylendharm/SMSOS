@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SMSOS Dashboard — Owner Portal</title>
-  <link rel="stylesheet" href="css/styles.css?v=7">
+  <link rel="stylesheet" href="css/styles.css?v=8">
   <!-- Feather / Lucide icons CDN -->
   <script src="https://unpkg.com/lucide@latest"></script>
   <!-- Firebase SDKs (compat mode for vanilla JS) -->
@@ -160,6 +160,63 @@
         Already have an account? <a href="#" onclick="showAuthCard('login'); return false;" style="color: var(--primary); text-decoration: underline;">Sign In</a>
       </div>
     </div>
+
+    <!-- Onboarding View (For Google users setting up their shop) -->
+    <div class="glass-panel auth-card" id="onboarding-card" style="display: none; max-width: 520px; width: 100%;">
+      <div class="brand">
+        <div class="brand-icon">
+          <i data-lucide="store"></i>
+        </div>
+        <span class="brand-text">SMSOS v2</span>
+      </div>
+      <h1>Setup Your Shop</h1>
+      <p>Configure your shop settings to get started</p>
+
+      <form id="onboarding-form">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label for="onboard-biz-name">Shop Name <span style="color: red;">*</span></label>
+            <input type="text" id="onboard-biz-name" class="form-control" placeholder="e.g. Anand South Indian Cafe" required>
+          </div>
+          <div class="form-group">
+            <label for="onboard-phone">WhatsApp Number <span style="color: red;">*</span></label>
+            <input type="text" id="onboard-phone" class="form-control" placeholder="+919876543210" required>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label for="onboard-biz-type">Business Type</label>
+            <select id="onboard-biz-type" class="form-control" required>
+              <option value="restaurant">Restaurant / Cafe</option>
+              <option value="grocery">Grocery Store</option>
+              <option value="bakery">Bakery & Sweets</option>
+              <option value="pharmacy">Pharmacy</option>
+              <option value="retail">General Retail</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="onboard-location">Shop Address (For Driving ETA)</label>
+            <input type="text" id="onboard-location" class="form-control" placeholder="e.g. T. Nagar, Chennai">
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div class="form-group">
+            <label for="onboard-prep-time">Prep Time (Mins)</label>
+            <input type="number" id="onboard-prep-time" class="form-control" value="15" min="5" max="120" required>
+          </div>
+          <div class="form-group">
+            <label for="onboard-radius">Delivery Radius (KM)</label>
+            <input type="number" id="onboard-radius" class="form-control" value="10" min="1" max="50" step="0.5" required>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">
+          <i data-lucide="rocket"></i> Complete Setup & Launch
+        </button>
+      </form>
+    </div>
   </div>
 
   <!-- Main App View -->
@@ -298,6 +355,6 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <!-- App Script -->
-  <script src="js/app.js?v=7"></script>
+  <script src="js/app.js?v=8"></script>
 </body>
 </html>

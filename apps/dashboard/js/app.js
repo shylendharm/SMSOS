@@ -62,10 +62,9 @@ async function handleGoogleSignIn() {
       showAuthCard('onboarding');
     } else {
       showToast('Signed in with Google successfully!');
-      authScreen.style.display = 'none';
-      appScreen.style.display = 'flex';
-      await loadUserProfile();
-      initRouter();
+      // Force page reload so the dashboard starts with a clean, fully initialized DOM and state
+      window.location.hash = '#orders';
+      window.location.reload();
     }
   } catch (err) {
     if (err.code === 'auth/popup-closed-by-user') {
@@ -254,6 +253,37 @@ function initAuth() {
         initRouter();
       } catch (err) {
         showToast(err.message || 'Registration failed.', 'error');
+      }
+    });
+  }
+
+  if (onboardingForm) {
+    onboardingForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const business_name = document.getElementById('onboard-biz-name').value;
+      const phone_number = document.getElementById('onboard-phone').value;
+      const business_type = document.getElementById('onboard-biz-type').value;
+      const location = document.getElementById('onboard-location').value;
+      const default_prep_time_minutes = parseInt(document.getElementById('onboard-prep-time').value) || 15;
+      const delivery_radius_km = parseFloat(document.getElementById('onboard-radius').value) || 10.0;
+
+      try {
+        await api('/auth/onboarding', {
+          method: 'POST',
+          body: JSON.stringify({
+            business_name,
+            phone_number,
+            business_type,
+            location,
+            default_prep_time_minutes,
+            delivery_radius_km,
+          }),
+        });
+        showToast('Shop onboarding completed successfully!');
+        window.location.hash = '#orders';
+        window.location.reload();
+      } catch (err) {
+        showToast(err.message || 'Onboarding failed.', 'error');
       }
     });
   }
