@@ -210,24 +210,26 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
             except Exception as e:
                 logger.error("Grok API exception", error=str(e))
 
-        # 1. Try Gemini API (Primary)
+        # 1. Try Gemini API (Primary with Model Fallbacks)
         if self.client:
-            try:
-                response = self.client.models.generate_content(
-                    model="gemini-2.0-flash",
-                    contents=message_text,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_instruction,
-                        response_mime_type="application/json",
-                        response_schema=IntentResult,
-                        temperature=0.2,
-                    ),
-                )
-                if response.text:
-                    result_data = json.loads(response.text)
-                    return IntentResult(**result_data)
-            except Exception as e:
-                logger.warning("Primary Gemini API call failed (e.g. rate limit), falling back to OpenRouter/Grok", error=str(e))
+            for gemini_model in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.0-flash-lite"]:
+                try:
+                    response = self.client.models.generate_content(
+                        model=gemini_model,
+                        contents=message_text,
+                        config=types.GenerateContentConfig(
+                            system_instruction=system_instruction,
+                            response_mime_type="application/json",
+                            response_schema=IntentResult,
+                            temperature=0.2,
+                        ),
+                    )
+                    if response.text:
+                        result_data = json.loads(response.text)
+                        logger.info("Successfully processed message with Gemini AI", model=gemini_model)
+                        return IntentResult(**result_data)
+                except Exception as e:
+                    logger.warning("Gemini API call failed for model", model=gemini_model, error=str(e))
 
         # 2. Try OpenRouter AI (Secondary Fallback)
         openrouter_key = settings.OPENROUTER_API_KEY
@@ -264,7 +266,7 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
                     {"role": "user", "content": message_text},
                 ],
                 "temperature": 0.1,
-                "max_tokens": 1000,
+                "max_tokens": 250,
                 "response_format": {"type": "json_object"},
             }
             try:
