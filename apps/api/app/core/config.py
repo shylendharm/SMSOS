@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     GEMINI_API_KEY: str | None = None
+    GROQ_API_KEY: str | None = None
     XAI_API_KEY: str | None = None
     GROK_API_KEY: str | None = None
     OPENROUTER_API_KEY: str | None = None

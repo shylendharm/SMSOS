@@ -162,14 +162,15 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
        - If the customer is replying "YES", "confirm", "ok", "aama" to confirm an order summary, set `is_order_confirmed = True`.
 """
 
-        xai_key = settings.XAI_API_KEY or settings.GROK_API_KEY
-        if xai_key:
+        # 1. Try Groq AI (Primary High-Speed Provider)
+        groq_key = settings.GROQ_API_KEY
+        if groq_key:
             import httpx
             headers = {
-                "Authorization": f"Bearer {xai_key}",
+                "Authorization": f"Bearer {groq_key}",
                 "Content-Type": "application/json",
             }
-            grok_system_prompt = system_instruction + (
+            groq_prompt = system_instruction + (
                 "\n\nCRITICAL OUTPUT FORMAT REQUIREMENT:\n"
                 "Return ONLY a valid JSON object with the following fields:\n"
                 "{\n"
@@ -187,32 +188,33 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
                 '  "reply_text": str\n'
                 "}"
             )
-            payload = {
-                "model": "grok-beta",
-                "messages": [
-                    {"role": "system", "content": grok_system_prompt},
-                    {"role": "user", "content": message_text},
-                ],
-                "temperature": 0.1,
-                "response_format": {"type": "json_object"},
-            }
-            try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    resp = await client.post("https://api.x.ai/v1/chat/completions", json=payload, headers=headers)
-                    if resp.status_code == 200:
-                        resp_json = resp.json()
-                        content = resp_json["choices"][0]["message"]["content"]
-                        result_data = json.loads(content)
-                        logger.info("Successfully processed message with Grok AI")
-                        return IntentResult(**result_data)
-                    else:
-                        logger.error("Grok API call failed", status_code=resp.status_code, body=resp.text)
-            except Exception as e:
-                logger.error("Grok API exception", error=str(e))
+            for groq_model in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]:
+                payload = {
+                    "model": groq_model,
+                    "messages": [
+                        {"role": "system", "content": groq_prompt},
+                        {"role": "user", "content": message_text},
+                    ],
+                    "temperature": 0.1,
+                    "response_format": {"type": "json_object"},
+                }
+                try:
+                    async with httpx.AsyncClient(timeout=15.0) as client:
+                        resp = await client.post("https://api.groq.com/openai/v1/chat/completions", json=payload, headers=headers)
+                        if resp.status_code == 200:
+                            resp_json = resp.json()
+                            content = resp_json["choices"][0]["message"]["content"]
+                            result_data = json.loads(content)
+                            logger.info("Successfully processed message with Groq AI", model=groq_model)
+                            return IntentResult(**result_data)
+                        else:
+                            logger.warning("Groq API call failed", model=groq_model, status_code=resp.status_code, body=resp.text)
+                except Exception as e:
+                    logger.warning("Groq API exception", model=groq_model, error=str(e))
 
-        # 1. Try Gemini API (Primary with Model Fallbacks)
+        # 2. Try Gemini API (Secondary with Model Fallbacks)
         if self.client:
-            for gemini_model in ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"]:
+            for gemini_model in ["gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash-lite"]:
                 try:
                     response = self.client.models.generate_content(
                         model=gemini_model,
@@ -260,7 +262,7 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
                 "}"
             )
             # Try OpenRouter Free Models
-            for openrouter_model in ["meta-llama/llama-3.3-70b-instruct:free", "google/gemini-2.0-flash-lite-001:free", "mistralai/mistral-7b-instruct:free"]:
+            for openrouter_model in ["openai/gpt-oss-20b:free", "google/gemma-4-26b-a4b-it:free", "nvidia/nemotron-nano-9b-v2:free"]:
                 payload = {
                     "model": openrouter_model,
                     "messages": [
@@ -286,6 +288,10 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
                                 result_data = json.loads(content_clean)
                                 logger.info("Successfully processed message with OpenRouter AI", model=openrouter_model)
                                 return IntentResult(**result_data)
+                            else:
+                                logger.warning("OpenRouter returned empty content", model=openrouter_model)
+                        else:
+                            logger.warning("OpenRouter API call failed", model=openrouter_model, status_code=resp.status_code, body=resp.text[:300])
                 except Exception as e:
                     logger.warning("OpenRouter API model call failed", model=openrouter_model, error=str(e))
 
