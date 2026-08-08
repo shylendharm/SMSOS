@@ -212,7 +212,7 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
 
         # 1. Try Gemini API (Primary with Model Fallbacks)
         if self.client:
-            for gemini_model in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.0-flash-lite"]:
+            for gemini_model in ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"]:
                 try:
                     response = self.client.models.generate_content(
                         model=gemini_model,
@@ -231,7 +231,7 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
                 except Exception as e:
                     logger.warning("Gemini API call failed for model", model=gemini_model, error=str(e))
 
-        # 2. Try OpenRouter AI (Secondary Fallback)
+        # 2. Try OpenRouter AI (Secondary Fallback with Completely Free Model)
         openrouter_key = settings.OPENROUTER_API_KEY
         if openrouter_key:
             import httpx
@@ -259,24 +259,24 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
                 '  "reply_text": str\n'
                 "}"
             )
-            payload = {
-                "model": "openrouter/auto",
-                "messages": [
-                    {"role": "system", "content": openrouter_prompt},
-                    {"role": "user", "content": message_text},
-                ],
-                "temperature": 0.1,
-                "max_tokens": 250,
-                "response_format": {"type": "json_object"},
-            }
-            try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    resp = await client.post("https://openrouter.ai/api/v1/chat/completions", json=payload, headers=headers)
-                    if resp.status_code == 200:
-                        resp_json = resp.json()
-                        content = resp_json["choices"][0]["message"].get("content")
-                        if content:
-                            if isinstance(content, str):
+            # Try OpenRouter Free Models
+            for openrouter_model in ["meta-llama/llama-3.3-70b-instruct:free", "google/gemini-2.0-flash-lite-001:free", "mistralai/mistral-7b-instruct:free"]:
+                payload = {
+                    "model": openrouter_model,
+                    "messages": [
+                        {"role": "system", "content": openrouter_prompt},
+                        {"role": "user", "content": message_text},
+                    ],
+                    "temperature": 0.1,
+                    "max_tokens": 250,
+                }
+                try:
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        resp = await client.post("https://openrouter.ai/api/v1/chat/completions", json=payload, headers=headers)
+                        if resp.status_code == 200:
+                            resp_json = resp.json()
+                            content = resp_json["choices"][0]["message"].get("content")
+                            if content:
                                 content_clean = content.strip()
                                 if content_clean.startswith("```"):
                                     content_clean = content_clean.split("```")[1]
@@ -284,26 +284,10 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
                                         content_clean = content_clean[4:]
                                     content_clean = content_clean.strip()
                                 result_data = json.loads(content_clean)
-                            else:
-                                result_data = content
-                            
-                            if isinstance(result_data, list) and len(result_data) > 0:
-                                result_data = result_data[0]
-                            
-                            if isinstance(result_data, dict):
-                                if "intent" not in result_data:
-                                    result_data["intent"] = "PLACE_ORDER"
-                                if "reply_text" not in result_data:
-                                    result_data["reply_text"] = "Processing your request..."
-                                if "action" in result_data and "repeat" in str(result_data["action"]).lower():
-                                    result_data["is_reorder"] = True
-                                
-                                logger.info("Successfully processed message with OpenRouter AI fallback")
+                                logger.info("Successfully processed message with OpenRouter AI", model=openrouter_model)
                                 return IntentResult(**result_data)
-                    else:
-                        logger.error("OpenRouter API call failed", status_code=resp.status_code, body=resp.text)
-            except Exception as e:
-                logger.error("OpenRouter API exception", error=str(e))
+                except Exception as e:
+                    logger.warning("OpenRouter API model call failed", model=openrouter_model, error=str(e))
 
         # 3. Smart Offline Fallback (If all APIs fail or rate-limit)
         return self._fallback_response(message_text, catalog_context)
@@ -314,8 +298,13 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
         catalog_context: Optional[List[Dict[str, Any]]] = None
     ) -> IntentResult:
         text_lower = message_text.lower()
-        is_food_inquiry = any(w in text_lower for w in ["enna irukku", "menu", "food", "items", "kitta", "list", "saapada"])
-        is_order_intent = any(w in text_lower for w in ["buy", "order", "vaanga", "venum", "pannanum", "dosa", "idli", "biryani", "rice", "coffee", "tea"])
+        is_food_inquiry = any(w in text_lower for w in ["enna irukku", "menu", "food", "items", "kitta", "list", "saapada", "listu", "rate"])
+        is_order_intent = any(w in text_lower for w in [
+            "buy", "order", "vaanga", "venum", "pannanum", "dosa", "dosai", "idli", "idly",
+            "biryani", "briyani", "rice", "coffee", "tea", "chapathi", "chappathi", "juice",
+            "water", "parotta", "poori", "vada", "pongal", "meals", "anupunga", "anupu",
+            "send", "deliver", "kudunga", "thaa"
+        ])
         is_reservation = any(w in text_lower for w in ["book", "table", "reserve", "slot"])
         is_status = any(w in text_lower for w in ["status", "where is", "track", "dispatch"])
 
