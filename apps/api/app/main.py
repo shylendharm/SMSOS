@@ -45,4 +45,14 @@ async def root_redirect():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    from urllib.parse import urlparse
+    
+    port = 8000
+    try:
+        url_parts = urlparse(settings.API_BASE_URL)
+        if url_parts.port:
+            port = url_parts.port
+    except Exception:
+        pass
+        
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=True)

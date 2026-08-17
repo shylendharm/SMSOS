@@ -205,7 +205,7 @@ GEMINI_API_KEY=your_gemini_api_key
 OPENROUTER_API_KEY=your_openrouter_api_key
 ORS_API_KEY=your_openrouteservice_api_key
 
-API_BASE_URL=http://localhost:8000
+API_BASE_URL=http://localhost:8005
 FRONTEND_BASE_URL=http://localhost:5173
 ```
 
@@ -219,12 +219,13 @@ alembic upgrade head
 ```bash
 python app/main.py
 ```
-The server starts at `http://localhost:8000`. API documentation is available at `http://localhost:8000/docs`.
+The server starts dynamically on the port specified in `API_BASE_URL` in your `.env` (e.g., `8005`). If no port is specified, it defaults to `8000`. 
+API documentation is available at `http://localhost:<PORT>/docs` (e.g., `http://localhost:8005/docs`).
 
 ### 6. Webhook Setup (Localtunnel / Ngrok)
-Expose port 8000 to receive live WhatsApp messages:
+Expose the configured port (e.g., 8005) to receive live WhatsApp messages:
 ```bash
-npx ngrok http 8000
+npx ngrok http 8005
 ```
 Copy the generated HTTPS URL and paste it into your Twilio Sandbox settings:
 ```

@@ -214,7 +214,7 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
 
         # 2. Try Gemini API (Secondary with Model Fallbacks)
         if self.client:
-            for gemini_model in ["gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash-lite"]:
+            for gemini_model in ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-1.5-pro"]:
                 try:
                     response = self.client.models.generate_content(
                         model=gemini_model,
@@ -233,14 +233,14 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
                 except Exception as e:
                     logger.warning("Gemini API call failed for model", model=gemini_model, error=str(e))
 
-        # 2. Try OpenRouter AI (Secondary Fallback with Completely Free Model)
+        # 3. Try OpenRouter AI (Secondary Fallback with Verified Free Models)
         openrouter_key = settings.OPENROUTER_API_KEY
         if openrouter_key:
             import httpx
             headers = {
                 "Authorization": f"Bearer {openrouter_key}",
                 "Content-Type": "application/json",
-                "HTTP-Referer": "http://localhost:8000",
+                "HTTP-Referer": "http://localhost:8005",
                 "X-Title": "SMSOS",
             }
             openrouter_prompt = system_instruction + (
@@ -261,8 +261,13 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
                 '  "reply_text": str\n'
                 "}"
             )
-            # Try OpenRouter Free Models
-            for openrouter_model in ["openai/gpt-oss-20b:free", "google/gemma-4-26b-a4b-it:free", "nvidia/nemotron-nano-9b-v2:free"]:
+            # Verified active free models on OpenRouter
+            for openrouter_model in [
+                "meta-llama/llama-3.3-70b-instruct:free",
+                "google/gemini-2.0-flash-lite-001:free",
+                "deepseek/deepseek-r1:free",
+                "qwen/qwen-2.5-coder-32b-instruct:free"
+            ]:
                 payload = {
                     "model": openrouter_model,
                     "messages": [
@@ -273,7 +278,7 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
                     "max_tokens": 250,
                 }
                 try:
-                    async with httpx.AsyncClient(timeout=30.0) as client:
+                    async with httpx.AsyncClient(timeout=15.0) as client:
                         resp = await client.post("https://openrouter.ai/api/v1/chat/completions", json=payload, headers=headers)
                         if resp.status_code == 200:
                             resp_json = resp.json()
@@ -295,7 +300,7 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
                 except Exception as e:
                     logger.warning("OpenRouter API model call failed", model=openrouter_model, error=str(e))
 
-        # 3. Smart Offline Fallback (If all APIs fail or rate-limit)
+        # 4. Smart Offline Fallback (If all APIs fail or rate-limit)
         return self._fallback_response(message_text, catalog_context)
 
     def _fallback_response(
@@ -309,7 +314,8 @@ CRITICAL TIME RULE: You MUST convert all time references ('7pm', '7:00 PM', 'noo
             "buy", "order", "vaanga", "venum", "pannanum", "dosa", "dosai", "idli", "idly",
             "biryani", "briyani", "rice", "coffee", "tea", "chapathi", "chappathi", "juice",
             "water", "parotta", "poori", "vada", "pongal", "meals", "anupunga", "anupu",
-            "send", "deliver", "kudunga", "thaa"
+            "send", "deliver", "kudunga", "thaa", "sandwich", "burger", "fries", "pizza",
+            "noodle", "curry", "paneer", "chicken", "veg", "omelette", "jamun", "payasam"
         ])
         is_reservation = any(w in text_lower for w in ["book", "table", "reserve", "slot"])
         is_status = any(w in text_lower for w in ["status", "where is", "track", "dispatch"])

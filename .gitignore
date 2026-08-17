@@ -58,3 +58,6 @@ coverage.xml
 
 # Credentials
 firebase-service-account*.json
+
+# Generated PDFs
+apps/api/static/receipts/*.pdf
